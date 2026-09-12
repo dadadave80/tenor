@@ -365,31 +365,66 @@ library TenorCouponLib {
         CouponStorage storage $ = couponStorage();
         ITenorCoupon.Coupon storage coupon = $.coupons[couponId];
         if (coupon.settled) revert ITenorCoupon.CouponAlreadySettled(couponId);
-        uint64 payAt = coupon.payAt;
-        if (block.timestamp < payAt) revert ITenorCoupon.CouponNotDue(couponId, payAt);
-        uint256 funded = coupon.funded;
-        if (funded == 0) revert ITenorCoupon.CouponNotFunded(couponId);
+        if (block.timestamp < coupon.payAt) revert ITenorCoupon.CouponNotDue(couponId, coupon.payAt);
+        if (coupon.funded == 0) revert ITenorCoupon.CouponNotFunded(couponId);
 
+        // Idempotence before interactions: a re-entrant or repeated call must find this already set.
         coupon.settled = true;
 
-        address token = $.token;
-        address usdc = $.usdc;
-        uint256 amountPerToken = coupon.amountPerToken;
-        uint256 unit = _unit(token);
         address[] memory holders = $.holders;
-        uint256 holderCount = holders.length;
+        // Entitlements are computed for every holder BEFORE anyone is paid, so an underfunded coupon
+        // reverts whole instead of paying the first few holders and stranding the rest.
+        (uint256[] memory entitlements, uint256 required) = _entitlements(holders, $.token, coupon.amountPerToken);
+        if (required > coupon.funded) revert ITenorCoupon.InsufficientFunding(required, coupon.funded);
 
-        uint256[] memory entitlements = new uint256[](holderCount);
-        uint256 required;
-        for (uint256 i; i < holderCount; ++i) {
+        uint256 totalPaid = _payHolders(couponId, $.usdc, holders, entitlements);
+        coupon.paid = totalPaid;
+        emit ITenorCoupon.CouponPaid(couponId, totalPaid, holders.length);
+
+        // Only the scheduled self-call may clear the booking; `completeSelfCall` requires
+        // `msg.sender == address(this)`, and `payCoupon` is permissionless.
+        if (msg.sender == address(this)) {
+            HSSAdapterLib.completeSelfCall(jobIdOf(couponId, coupon.scheduleNonce));
+        }
+    }
+
+    /// @dev Each holder's entitlement at the CURRENT balance, and their total.
+    ///      Split out of {payCoupon} so the two loops' locals do not have to be live at once —
+    ///      together they overflow the EVM's stack slots under the non-IR optimiser.
+    /// @param holders The coupon register.
+    /// @param token The security token whose balances set entitlement.
+    /// @param amountPerToken USDC atomic units per WHOLE security token.
+    /// @return entitlements Per-holder entitlement, index-aligned with `holders`.
+    /// @return required The sum of `entitlements` — what the coupon must have funded.
+    function _entitlements(address[] memory holders, address token, uint256 amountPerToken)
+        private
+        view
+        returns (uint256[] memory entitlements, uint256 required)
+    {
+        uint256 unit = _unit(token);
+        uint256 count = holders.length;
+        entitlements = new uint256[](count);
+        for (uint256 i; i < count; ++i) {
             uint256 entitlement = amountPerToken * IERC20Metadata(token).balanceOf(holders[i]) / unit;
             entitlements[i] = entitlement;
             required += entitlement;
         }
-        if (required > funded) revert ITenorCoupon.InsufficientFunding(required, funded);
+    }
 
-        uint256 totalPaid;
-        for (uint256 i; i < holderCount; ++i) {
+    /// @dev Pays each holder, recording rather than reverting on a per-holder HTS failure.
+    ///      A holder who never associated with USDC, or whom the issuer froze, must not strand the others.
+    /// @param couponId The coupon being settled, for the skip event.
+    /// @param usdc The settlement token.
+    /// @param holders The coupon register.
+    /// @param entitlements Per-holder entitlement, index-aligned with `holders`.
+    /// @return totalPaid The sum actually delivered.
+    function _payHolders(
+        uint256 couponId,
+        address usdc,
+        address[] memory holders,
+        uint256[] memory entitlements
+    ) private returns (uint256 totalPaid) {
+        for (uint256 i; i < holders.length; ++i) {
             uint256 entitlement = entitlements[i];
             if (entitlement == 0) continue;
             int64 code = TenorHTS.tryTransfer(usdc, holders[i], entitlement);
@@ -398,12 +433,6 @@ library TenorCouponLib {
             } else {
                 emit ITenorCoupon.CouponPaymentSkipped(couponId, holders[i], entitlement, code);
             }
-        }
-        coupon.paid = totalPaid;
-        emit ITenorCoupon.CouponPaid(couponId, totalPaid, holderCount);
-
-        if (msg.sender == address(this)) {
-            HSSAdapterLib.completeSelfCall(jobIdOf(couponId, coupon.scheduleNonce));
         }
     }
 
