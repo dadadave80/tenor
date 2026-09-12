@@ -1,0 +1,5 @@
+# .env.local holds TENOR_OPERATOR_KEY. Vercel reads env from project settings; the file must never ship.
+.env*
+.next
+node_modules
+*.tsbuildinfo
