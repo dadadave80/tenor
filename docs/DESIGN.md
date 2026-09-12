@@ -67,6 +67,8 @@ break that rule.
    (`MarketFacet`, `OwnershipFacet`, …). The implementation lists the ten facets `DeployTenor`
    actually cuts and reads their addresses from `DiamondLoupe.facets()`, showing `—` until deployed.
    A fabricated contract address under the heading "Built in the open" would be self-defeating.
+   The per-facet badge reads **Deployed**, not "Verified", for the same reason: a loupe read proves
+   the facet is cut in, and proves nothing about Sourcify.
 
 The compliance toggle demo *is* interactive illustration and stays that way — but its three labels
 (`Verification required`, `Account frozen`, `Trading paused`) are the exact strings

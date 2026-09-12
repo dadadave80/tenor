@@ -111,7 +111,9 @@ console.log(`  – investor C (${investorC}) is left UNVERIFIED on purpose`)
 
 // --- mint to A -----------------------------------------------------------------------------------
 console.log('\nminting …')
-if ((await erc20.balanceOf(investorA)) >= MINT) {
+// `>= MINT` would be wrong: the A->B proof below moves 10 notes out, so a rerun would see 990,
+// decide nothing had been minted, and mint another 1,000 every time.
+if ((await erc20.balanceOf(investorA)) > 0n) {
   console.log(`  – issue(A, 1000 TGN27)               already holds ${(await erc20.balanceOf(investorA)).toString()}`)
 } else {
   await record('issue(A, 1000 TGN27)', mint.issue(investorA, MINT, '0x'))

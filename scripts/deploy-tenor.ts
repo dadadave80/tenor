@@ -30,7 +30,7 @@ const HBAR_SEED = 20n * 10n ** 18n
 const { usdc, token } = requireRecord(['usdc', 'token'])
 // `operator()` also guards the genesis hash, which is what stops a record left over from a local
 // rehearsal being deployed against.
-const { address: admin } = await operator({ minHbar: 40 })
+const { address: admin } = await operator({ minHbar: 100 })
 
 // forge has no env var for the signing key, so it goes in argv. That makes it visible in this
 // machine's process list for the length of the deploy; acceptable only because this is a disposable

@@ -131,10 +131,13 @@ export function Contracts() {
               >
                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                   <span style={{ fontWeight: 500, fontSize: 14 }}>{f.name}</span>
+                  {/* "Deployed", not "Verified": a loupe read proves the facet is cut into the
+                      diamond, and says nothing about whether its source is verified on Sourcify.
+                      Under a heading that reads "Built in the open" that distinction is the point. */}
                   {found && (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--accent)', fontWeight: 500 }}>
                       <Icon name="check" size={11} strokeWidth={2.5} />
-                      Verified
+                      Deployed
                     </span>
                   )}
                 </span>

@@ -344,3 +344,106 @@ later fires into `CouponAlreadySettled`, and because Lattice's HSSAdapter facet 
 issuer can delete the orphan directly with `deleteSchedule`. Only the diamond's HBAR for that one
 booking is wasted. Covered by `test_firedStaleSchedule_clearsTheCurrentBooking_documentsNonceDrift`
 and `test_orphanedBooking_remainsDeletableThroughTheHssAdapterFacet`.
+
+---
+
+## 9. The local rehearsal — how every script above was actually verified
+
+**Why.** `bun build` proves imports resolve; it does not prove a script runs. None of
+`deploy-ats` / `issue-bond` / `grant-kyc` / `deploy-tenor` had ever executed before 2026-09-12, and
+running them for the first time against a funded testnet key means paying for each discovery with
+HBAR and wall-clock. `operator()` only checks `chainId == 296`, so a local node serving that id is
+accepted with no code change.
+
+**Six things were broken.** All six are recorded in §9.2 below; none were findable by reading.
+
+### 9.1 The recipe
+
+```bash
+# 1. A chain that answers as 296. --block-time matters: anvil mines on demand by default, and ATS's
+#    hedera-testnet config waits for `confirmations: 2`, so a second block never arrives, the attempt
+#    times out, and the retry re-sends with a stale nonce — "nonce has already been used" on a
+#    deployment that in fact SUCCEEDED. Not a Hedera bug; an artifact of demand mining.
+anvil --chain-id 296 --port 8545 --block-time 1 --silent &
+cast rpc anvil_setBalance <operator> 0x152D02C7E14AF6800000   # 100k HBAR (18 dp on the EVM side)
+
+# 2. An env file that points the ATS tooling at it. Both names are needed: ATS parses its own
+#    prefixed name at MODULE LOAD, before any of our code runs.
+grep -vE '^(HEDERA_TESTNET_RPC|HEDERA_TESTNET_JSON_RPC_ENDPOINT)=' contracts/.env > rehearse.env
+cat >> rehearse.env <<'EOF'
+HEDERA_TESTNET_RPC=http://127.0.0.1:8545
+HEDERA_TESTNET_JSON_RPC_ENDPOINT=http://127.0.0.1:8545
+EOF
+
+# 3. The chain. create:usdc is the one step that cannot be rehearsed — it uses the Hashgraph SDK
+#    against real HTS, not the EVM.
+bun --env-file=rehearse.env scripts/deploy-ats.ts     # 108 facets, 3 contracts, 180M gas, 612s
+bun --env-file=rehearse.env scripts/issue-bond.ts
+bun --env-file=rehearse.env scripts/grant-kyc.ts
+
+# 4. For DeployTenor, etch the mocks the tests use at the system-contract addresses, then mint a
+#    mock USDC (the mock's associateToken returns INVALID_TOKEN_ID for a token it never created).
+cast rpc anvil_setCode 0x...167 "$(jq -r .deployedBytecode.object \
+  contracts/out/MockHederaTokenService.sol/MockHederaTokenService.json)"
+cast rpc anvil_setCode 0x...16B "$(jq -r .deployedBytecode.object \
+  contracts/out/MockHederaScheduleService.sol/MockHederaScheduleService.json)"
+cast send 0x...167 'createFungibleToken((string,string,address,string,bool,int64,bool,(uint256,(bool,address,bytes,bytes,address))[],(int64,address,int64)),int64,int32)' \
+  '("Tenor Demo USDC","USDC",<operator>,"",false,0,false,[],(0,0x0,0))' 1000000000000000 6 --value 1
+# put the returned address in deployments/296/ats.json as `usdc`, then:
+bun --env-file=rehearse.env scripts/deploy-tenor.ts   # skips Sourcify automatically for localhost
+
+# 5. Throw the rehearsal's record away. It is tracked.
+git checkout deployments/296/ats.json && rm -rf deployments/296/investors.json \
+  deployments/.checkpoints contracts/broadcast contracts/cache/DeployTenor.s.sol
+```
+
+**`ats.json` carries the chain's genesis hash** precisely so step 5 being forgotten is loud rather
+than silent: a record written against a local chain still claims `network: "hedera-testnet"`, and
+`operator()` refuses a record whose genesis does not match the RPC it is talking to.
+
+**On the real network this is slower than 612s.** That figure is instant mining with no propagation.
+Sequential facet deploys at `confirmations: 2` through the public relay: budget 30–40 min for the ATS
+system alone and 60–90 min for the whole chain through `deploy:tenor`.
+
+### 9.2 What the rehearsal found — corrections to §1
+
+§1 says the ATS reading was accurate, and for the hold/allowance mechanics it was. These are things
+no amount of reading surfaced, listed in the order they bit:
+
+1. **`ethers` was never a dependency.** bun installs in isolated mode, so ATS's own `ethers` lives in
+   its store directory and is invisible to our scripts. Every script died on import. It is now a
+   direct dependency. (CI's `bun build --target=node` per script *does* catch this — that job had
+   simply never run on this code.)
+2. **ATS validates the ISIN check digit on-chain** (`contracts/factory/isinValidator.sol`, ISO 6166
+   Luhn over digit-expanded characters). A plausible-looking string reverts `WrongISINChecksum`. Note
+   ATS's own test constant `US0000000000` is itself invalid by that rule — it is only used where the
+   validator is not reached, so it is not a usable example. `XS0000TGN272` is what we issue: valid
+   checksum, and `XS` rather than `US` so a demo instrument does not sit in a national numbering
+   agency's registered space.
+3. **`grantKyc`'s last argument is the KYC issuer, and it is checked against the token's SSI issuer
+   registry, not against a role.** An unregistered address reverts `AccountIsNotIssuer(address)` even
+   holding `ROLE_KYC`, `ROLE_KYC_MANAGER` and `ROLE_INTERNAL_KYC_MANAGER`. Registering needs
+   `ROLE_SSI_MANAGER` at issuance plus an `addIssuer(issuer)` call before the first grant. This is
+   the single non-obvious step between "the token exists" and "anyone can be verified".
+4. **Neither `grantKyc` nor `issue` is safely repeatable.** Re-granting an already-granted account
+   reverts `InvalidKycStatus()` — *the same error* a transfer to an unverified holder produces — so a
+   retry after any partial failure fails while pointing at the opposite problem. Both steps now read
+   state first (`getKycStatusFor`, `balanceOf`).
+5. **`InvalidKycStatus()` is selector `0xfc855b1b`**, declared with no arguments, and the live revert
+   carries 32 trailing bytes anyway. viem's `decodeErrorResult` tolerates the extra data and returns
+   `errorName: 'InvalidKycStatus'` against `atsTokenAbi` — checked, because the client's
+   "Verification required" label depends on it.
+6. **`DeployTenor.run()` must be broadcast by `admin`.** It takes seven arguments and sends
+   `associateToken` as the diamond admin immediately after assembly. A bare `forge script` broadcasts
+   from forge's own default sender, so the association reverts
+   `AccessControlUnauthorizedAccount` *after* the diamond is deployed. `Deploy.t.sol` covers
+   `buildCuts`, not `run()`. `scripts/deploy-tenor.ts` now owns the invocation.
+
+### 9.3 What the local chain still cannot tell us
+
+- `simulateContract(fill)` succeeding through the **public relay** for an eligible buyer. The whole
+  label machine is `eth_call` faithfully executing `0x167` allowance semantics; the mock says it
+  works, the relay is the thing that has to agree. First thing to check after G1.
+- That HashScan shows the **diamond** verified, not only the facets — it is a nested CREATE2 inside
+  `LatticeFactory`. Fallback if forge's `additionalContracts` walk misses it:
+  `forge verify-contract <tenor> Lattice --verifier sourcify --verifier-url https://server-verify.hashscan.io`.
