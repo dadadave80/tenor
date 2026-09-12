@@ -238,7 +238,7 @@ export function Wordmark({ height = 26, fontSize = 21 }: { height?: number; font
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/brand/tenor-ribbon.png" alt="" style={{ height, width: 'auto', display: 'block' }} />
+      <img src="/brand/tenor-ribbon.svg" alt="" style={{ height, width: 'auto', display: 'block' }} />
       <span style={{ fontWeight: 600, fontSize, letterSpacing: '-0.03em', lineHeight: 1 }}>tenor</span>
     </span>
   )

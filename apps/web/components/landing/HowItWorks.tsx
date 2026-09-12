@@ -47,7 +47,7 @@ function Badge({ size = 20, img = 12 }: { size?: number; img?: number }) {
   return (
     <span style={{ width: size, height: size, borderRadius: 6, background: 'var(--surface-tint)', display: 'grid', placeItems: 'center' }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/brand/tenor-ribbon.png" alt="Tenor" style={{ height: img, width: 'auto', display: 'block' }} />
+      <img src="/brand/tenor-ribbon.svg" alt="Tenor" style={{ height: img, width: 'auto', display: 'block' }} />
     </span>
   )
 }

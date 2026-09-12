@@ -56,7 +56,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         appearance: {
           theme: '#0A0A0A',
           accentColor: '#3DD68C',
-          logo: '/brand/tenor-ribbon.png',
+          logo: '/brand/tenor-ribbon.svg',
           walletChainType: 'ethereum-only',
         },
       }}

@@ -19,7 +19,7 @@ Reading it needs design-system authorization (`/design-login`), after which the 
 |---|---|
 | `tokens.css` | `apps/web/app/tokens.css` — **verbatim**, both palettes |
 | the `<helmet>` base styles and keyframes | `apps/web/app/globals.css` |
-| `brand/tenor-ribbon.png` | `apps/web/public/brand/tenor-ribbon.png` |
+| `brand/tenor-ribbon.png` | `apps/web/public/brand/tenor-ribbon.svg` — the PNG could not be imported intact: `DesignSync get_file` caps responses at 256 KiB of base64 and returned it `truncated: true` at 196,608 bytes, which drew the mark with its bottom 29% missing. The vector is the full mark, also used for `app/icon.svg` and `app/favicon.ico`. |
 | `Tenor Landing.dc.html` | `apps/web/app/page.tsx` + `apps/web/components/landing/*` |
 
 `tokens.css` is imported unchanged so the design stays the single source of truth: re-import it

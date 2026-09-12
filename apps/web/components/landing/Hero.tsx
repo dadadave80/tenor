@@ -165,7 +165,7 @@ export function Hero() {
               }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/brand/tenor-ribbon.png" alt="Tenor" style={{ height: 18, width: 'auto', display: 'block' }} />
+              <img src="/brand/tenor-ribbon.svg" alt="Tenor" style={{ height: 18, width: 'auto', display: 'block' }} />
             </span>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 500 }}>Buy 50 TGN27</div>
