@@ -121,7 +121,10 @@ if (!tenor) {
   )
 }
 
-writeRecord({ tenor })
+// Recorded because Hashio caps `eth_getLogs` at a 7-day window and refuses `fromBlock: "earliest"`,
+// so the client cannot enumerate anything from events without a real starting block.
+const deployBlock = await provider.getBlockNumber()
+writeRecord({ tenor, deployBlock })
 
 // --- the two post-deploy steps forge cannot do -------------------------------------------------
 // `associateToken` reaches the Hedera Token Service at `0x167`, which has no EVM bytecode for forge

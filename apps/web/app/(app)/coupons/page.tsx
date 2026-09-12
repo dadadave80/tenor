@@ -3,8 +3,9 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAccount, useClient, useReadContract, useReadContracts } from 'wagmi'
-import { getLogs } from 'viem/actions'
 import { parseAbiItem } from 'viem'
+import { getBlockNumber } from 'viem/actions'
+import { getAllLogs } from '@/lib/logs'
 import { Icon } from '@/components/landing/primitives'
 import { Card, Pill, Spinner, Value } from '@/components/app/ui'
 import { tenorAbi } from '@/lib/abi'
@@ -49,15 +50,18 @@ export default function CouponsPage() {
     queryKey: ['couponIds', tenor],
     enabled: Boolean(tenor && client),
     queryFn: async () => {
-      const logs = await getLogs(client!, {
-        address: tenor,
+      // Not `fromBlock: 'earliest'`: Hashio rejects it outright, because it caps the span at seven
+      // days. `getAllLogs` starts from the recorded deploy block and walks in windows.
+      const latest = await getBlockNumber(client!)
+      const logs = await getAllLogs(client!, {
+        address: tenor!,
         event: parseAbiItem(
           'event CouponFunded(uint256 indexed couponId, uint256 amount, uint256 amountPerToken, uint64 payAt)',
         ),
-        fromBlock: 'earliest',
-        toBlock: 'latest',
+        latest,
       })
-      return [...new Set(logs.map((l) => l.args.couponId!))].sort((a, b) => (a < b ? -1 : 1))
+      const ids = logs.map((l) => (l as unknown as { args: { couponId: bigint } }).args.couponId)
+      return [...new Set(ids)].sort((a, b) => (a < b ? -1 : 1))
     },
   })
 

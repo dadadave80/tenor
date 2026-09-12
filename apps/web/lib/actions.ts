@@ -170,7 +170,11 @@ export function useFillAction(id: bigint | undefined, listing: Listing | undefin
   const gate = useMemo(() => {
     if (!tenor || !addresses.usdc) return blocked('Not deployed yet', { helper: 'Waiting for contract addresses.' })
     if (r.disconnected) return blocked('Connect wallet')
-    if (r.loading) return blocked('Checking…')
+    if (r.loading) {
+      return r.unreadable
+        ? blocked('Checking…', { helper: 'Could not read your account from the network — retrying.' })
+        : blocked('Checking…')
+    }
     if (!listing || id === undefined) return blocked('Select a listing')
     if (amount <= 0n) return blocked('Enter an amount')
     if (amount > listing.remaining) {
@@ -281,7 +285,11 @@ export function useListAction(amount: bigint, pricePerToken: bigint, expiry: big
   const gate = useMemo(() => {
     if (!tenor || !token) return blocked('Not deployed yet', { helper: 'Waiting for contract addresses.' })
     if (r.disconnected) return blocked('Connect wallet')
-    if (r.loading) return blocked('Checking…')
+    if (r.loading) {
+      return r.unreadable
+        ? blocked('Checking…', { helper: 'Could not read your account from the network — retrying.' })
+        : blocked('Checking…')
+    }
     if (amount <= 0n) return blocked('Enter an amount')
     if (amount > r.tokens) return blocked('More than you hold', { helper: 'Reduce the amount.' })
     if (pricePerToken <= 0n) return blocked('Enter a price')

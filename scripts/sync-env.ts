@@ -21,6 +21,9 @@ const managed: Record<string, string | undefined> = {
   NEXT_PUBLIC_ATS_TOKEN: rec.token,
   NEXT_PUBLIC_USDC: rec.usdc,
   NEXT_PUBLIC_PARTITION: rec.partition,
+  // Hashio caps `eth_getLogs` at a 7-day window, so anything read from events needs a real starting
+  // block rather than `earliest`.
+  NEXT_PUBLIC_DEPLOY_BLOCK: rec.deployBlock ? String(rec.deployBlock) : undefined,
 }
 
 const lines = (existsSync(ENV) ? readFileSync(ENV, 'utf8').split('\n') : []).filter(

@@ -52,7 +52,11 @@ export function FillDrawer({ listing, onClose }: { listing: ListingRow | null; o
 
       {/* The three facts the trade depends on, stated before the button is read. */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {r.frozen ? (
+        {r.unreadable ? (
+          <Pill kind="neutral" icon="clock">
+            Checking your account…
+          </Pill>
+        ) : r.frozen ? (
           <Pill kind="danger" icon="snow">
             Account frozen
           </Pill>

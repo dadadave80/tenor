@@ -21,8 +21,17 @@ const KYC_GRANTED = 1
 export type Readiness = {
   /** No wallet connected. Every other field is meaningless until this is false. */
   disconnected: boolean
-  /** Still fetching. Buttons show their pending label rather than a wrong one. */
+  /**
+   * Still fetching, OR the reads came back unusable.
+   *
+   * These are one flag on purpose: both mean "we do not know yet", and the only wrong answer is to
+   * present a failed read as a fact. A dropped multicall would otherwise make `verified` false and
+   * fire "Verification required" -- an issuer-only, unactionable message -- because of a relay
+   * hiccup, on a page whose entire claim is that the label is the truth.
+   */
   loading: boolean
+  /** Set when the reads failed rather than simply not having arrived. The UI can say so. */
+  unreadable: boolean
   address?: `0x${string}`
   /** HBAR, 18 dp on the EVM side. Gas for every transaction, including HTS association. */
   hbar: bigint
@@ -48,6 +57,7 @@ export type Readiness = {
 const EMPTY: Readiness = {
   disconnected: true,
   loading: false,
+  unreadable: false,
   hbar: 0n,
   usdcAssociated: false,
   usdc: 0n,
@@ -70,7 +80,7 @@ export function useReadiness(): Readiness {
 
   // One multicall rather than eleven round trips: the drawer re-reads these on every keystroke
   // through the amount field, and eleven requests per keystroke is how a relay starts rate-limiting.
-  const { data, isLoading } = useReadContracts({
+  const { data, isLoading, isError } = useReadContracts({
     allowFailure: true,
     contracts: [
       { address: token, abi: atsTokenAbi, functionName: 'getKycStatusFor', args: [address!] },
@@ -101,11 +111,17 @@ export function useReadiness(): Readiness {
   if (!address) return EMPTY
   if (!tenor || !token || !usdc) return { ...EMPTY, disconnected: false, address }
 
+  // A read that did not arrive is not a read that said "no". Anything short of usable data is
+  // reported as not-yet-known, so no compliance label is ever drawn from a failure.
+  const compliance = [0, 1, 2, 3, 4].map((i) => data?.[i]?.status)
+  const unreadable = isError || (!isLoading && compliance.some((st) => st !== 'success'))
+
   const at = <T,>(i: number, fallback: T): T => (data?.[i]?.status === 'success' ? (data[i].result as T) : fallback)
 
   return {
     disconnected: false,
-    loading: isLoading,
+    loading: isLoading || unreadable,
+    unreadable,
     address,
     hbar: bal?.value ?? 0n,
     verified: Number(at<bigint | number>(0, 0)) === KYC_GRANTED,

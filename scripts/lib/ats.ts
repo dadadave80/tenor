@@ -49,6 +49,14 @@ export type AtsRecord = {
   usdc?: string
   /** The Tenor diamond, once deployed. */
   tenor?: string
+  /**
+   * Block the diamond was deployed in.
+   *
+   * The client needs it because Hashio caps `eth_getLogs` at a SEVEN DAY window and rejects
+   * `fromBlock: "earliest"` outright (`-32004 ... exceed the maximum allowed duration of 7 days`).
+   * Enumerating anything from events therefore needs a real starting block, not a tag.
+   */
+  deployBlock?: number
   notes?: Record<string, string>
 }
 
