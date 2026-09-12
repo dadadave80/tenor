@@ -66,15 +66,35 @@ modules**, including new reusable facets for the Hedera Token Service and Hedera
 
 ## Deployed addresses (Hedera testnet, chain 296)
 
-<!-- filled in by scripts/ and verified on HashScan -->
+All eleven contracts are **verified on Sourcify, `exact_match`** — the diamond itself plus all ten
+facets. `bun run verify:tenor` re-checks and prints each verdict.
 
 | Contract | Address | HashScan |
 |---|---|---|
-| Tenor diamond | _pending_ | |
-| ATS BusinessLogicResolver | _pending_ | |
-| ATS Factory | _pending_ | |
-| Tenor Green Note 2027 (TGN27) | _pending_ | |
-| Demo USDC | _pending_ | |
+| **Tenor diamond** (market + coupons) | `0x214E411f9E556f1A83eB2277376c88E44A919159` | [open](https://hashscan.io/testnet/contract/0x214E411f9E556f1A83eB2277376c88E44A919159) |
+| **Tenor Green Note 2027 (TGN27)** | `0x1EB9D5370382dAF0A0A116C0b7C77899799d5EAF` | [open](https://hashscan.io/testnet/contract/0x1EB9D5370382dAF0A0A116C0b7C77899799d5EAF) |
+| **Demo USDC** (HTS, 6 dp) | `0.0.10504590` · `0x…a0498e` | [open](https://hashscan.io/testnet/token/0.0.10504590) |
+| ATS BusinessLogicResolver | `0x0aFFA521E6019AAfc4A61829c1B823375E1Bf040` | [open](https://hashscan.io/testnet/contract/0x0aFFA521E6019AAfc4A61829c1B823375E1Bf040) |
+| ATS Factory | `0x6b48Ac8a6fb42b82Bc1e2d615503e9274Db8bA05` | [open](https://hashscan.io/testnet/contract/0x6b48Ac8a6fb42b82Bc1e2d615503e9274Db8bA05) |
+| Issuer / operator | `0xc46A896cBf32Ba3212ebE12108345F30AC0a0Efd` | [open](https://hashscan.io/testnet/account/0xc46A896cBf32Ba3212ebE12108345F30AC0a0Efd) |
+
+### Evidence on chain
+
+| Claim | Transaction |
+|---|---|
+| **G1 — atomic delivery-versus-payment.** 25 TGN27 against 2,450 USDC, buyer ≠ seller, both legs in one transaction with the bond checking compliance | [`0x688b15de…`](https://hashscan.io/testnet/transaction/0x688b15defa101b54f2efeda55d575817393438204b3b85df36809f2532227fe9) |
+| A compliant transfer is allowed | [`0x638e0e51…`](https://hashscan.io/testnet/transaction/0x638e0e517920f2c5b1e3403f8761269d6a4763800f923f553c7f0bba0db8f94a) |
+| The same transfer to an unverified holder is refused **by the token**, `InvalidKycStatus()` `0xfc855b1b` | selector asserted, not just "it reverted" |
+| A coupon paid — 1,462.50 USDC across 2 holders, triggered by a **non-issuer** | [`0xcf6b13e3…`](https://hashscan.io/testnet/transaction/0xcf6b13e39b07e30625e18c4ad7d5b5c61ee6bacefa38314c9e6d4f4ffd1b8586) |
+| A freshly generated wallet — what a passkey sign-in produces — funded and buying | [`0x41c213d6…`](https://hashscan.io/testnet/transaction/0x41c213d6583c5aa36f9ba18dc6dcbc27fb146a2e9df4317c62276c1ccfa29096) |
+
+`bun run integration` reproduces the market evidence; `bun run coupon` reproduces the coupon.
+
+One thing is deliberately **not** claimed: coupons do not yet pay with nobody sending a transaction.
+The schedule is booked with the Hedera Schedule Service and the network fires it within 25 ms of its
+pay date, but the scheduled call itself fails `INVALID_PAYER_SIGNATURE`, so the transfer is completed
+by a permissionless `payCoupon` that any holder can call. `docs/GROUND-TRUTH.md` §10 has the evidence
+and the cause, and the app's copy says exactly this and no more.
 
 Facet addresses are enumerable on-chain via `DiamondLoupe.facets()` and are listed in the client's
 **Contracts** page.
@@ -171,7 +191,11 @@ a transaction that will fail** — the primary button's label *is* the blocking 
 | [`docs/SPEC.md`](docs/SPEC.md) | Engineering specification, with the forced deviations marked inline. |
 | [`docs/GROUND-TRUTH.md`](docs/GROUND-TRUTH.md) | Every external API read from source rather than memory. Start here. |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | UX flows, screens, components, copy. |
-| [`docs/DEMO.md`](docs/DEMO.md) | Demo script. |
+| [`docs/DEMO.md`](docs/DEMO.md) | Addresses, on-chain evidence, the click-through, and what is deliberately not claimed. |
+
+`GROUND-TRUTH.md` is the document to read first. §9 is the local rehearsal — how the whole deploy
+chain was run against a local node before it was run for money, which found six real breaks; §10 is
+the one gate that does not fully pass, recorded in full because the product makes a claim about it.
 
 `GROUND-TRUTH.md` exists because the original spec's account of the Lattice HTS/HSS surface was
 written from memory and turned out to be wrong in ways that did not compile — wrong function names,
