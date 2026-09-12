@@ -189,7 +189,7 @@ not needed for the capacity check. What remains unverified is the end-to-end fir
 `payCoupon` actually executes at expiry with the diamond as sender. That needs a funded testnet
 operator and is the real G2 exit criterion.
 
-### 3.3 G1 gate status — unresolved, needs a funded operator
+### 3.3 G1 gate status — **PASSES** (2026-09-12). Fill `0x688b15de…`; see §10 for the coupon gate.
 
 `contracts/lib/lattice/script/config/hedera/ProbeHedera.s.sol` is a day-0 probe that exercises
 HIP-906 `transferFrom`, the `delegatableContractId` key rule, and (probe 6) `scheduleSelfCall` ~60s
@@ -447,3 +447,65 @@ no amount of reading surfaced, listed in the order they bit:
 - That HashScan shows the **diamond** verified, not only the facets — it is a nested CREATE2 inside
   `LatticeFactory`. Fallback if forge's `additionalContracts` walk misses it:
   `forge verify-contract <tenor> Lattice --verifier sourcify --verifier-url https://server-verify.hashscan.io`.
+
+---
+
+## 10. Scheduled coupons on testnet — the schedule fires, the payer signature does not
+
+This is the one gate that does **not** fully pass, recorded precisely because the landing page makes a
+claim about it.
+
+### 10.1 What works
+
+Everything except the last link in the chain, verified on testnet 2026-09-12:
+
+| Step | Result |
+|---|---|
+| `registerHolders` | ✓ `0x5c1c0a1a…` — 2 holders, idempotent per address as documented |
+| `couponRequirement(1_500_000)` | ✓ 1,462.50 USDC for 975 registered tokens |
+| `fundCoupon` | ✓ pulls only the shortfall, so re-calling it re-dates for free |
+| `hasScheduleCapacity(payAt, 2M gas)` | ✓ `true` |
+| `scheduleCoupon` | ✓ books a real HSS entity, e.g. `0.0.10506145` |
+| the network firing it | ✓ `executed_timestamp` = `payAt` + **25 ms** |
+| the scheduled call succeeding | ✗ `INVALID_PAYER_SIGNATURE` |
+| `payCoupon` called by anyone | ✓ pays 1,462.50 USDC across both holders |
+
+### 10.2 The failure, exactly
+
+Two independent schedules (`0.0.10505907`, `0.0.10506145`), both created by `scheduleCoupon`, both
+executed by the network within 25 ms of their pay date, both failed with **`INVALID_PAYER_SIGNATURE`**.
+Neither produced a contract result, so the inner `payCoupon` never reached the EVM.
+
+The payer is the diamond (`0.0.10504773`), which is what `HSSAdapterLib.scheduleSelfCall` intends —
+HIP-1215 makes the calling contract the schedule's payer. The diamond's `admin_key` is a
+self-referencing `contractID` key, which is correct, and it held 20 HBAR throughout.
+
+**`authorizeSchedule` is not the fix.** The obvious reading — that HIP-1215 books the schedule and
+HIP-755 must then sign it — is wrong. Calling `authorizeSchedule(scheduleAddress)` on the booked
+schedule reverts `HSSCallFailed(0xf0637961, 205)`, and 205 is `NO_NEW_VALID_SIGNATURES`: the
+diamond's signature was already on the schedule. `scheduleCall` does self-authorize.
+
+So the signature is present at creation and rejected at execution. The consistent reading is that a
+contract's `contractID` key is only verifiable inside a contract call frame, and a scheduled
+transaction executes outside any frame — so a contract cannot act as a scheduled transaction's fee
+payer on the current testnet node, whatever HIP-1215 intends.
+
+`scheduleCallWithPayer` and `executeCallOnPayerSignature` exist in Lattice's vendored
+`IHederaScheduleService` and would let an EOA be the payer, but `HSSAdapter` does not expose them —
+neither selector is routable on the diamond — so this cannot be worked around from our side without
+changing Lattice.
+
+### 10.3 What this means for the product, and for the claims
+
+`payCoupon` is **permissionless** and that is load-bearing, not a consolation. Verified: investor B,
+holding no `ISSUER_ROLE`, both simulated and executed it, and 1,462.50 USDC moved to the two
+registered holders in proportion to their live balances (940 × 1.50 and 35 × 1.50).
+
+So the honest claim is: the coupon is funded once, booked with the Hedera Schedule Service, and the
+network fires it at the exact second it was booked for — and because the payment itself is
+permissionless, any holder or keeper can complete it. The claim that must NOT be made is that the
+final transfer currently happens with nobody sending a transaction. The landing page and the coupons
+page say the former.
+
+Fix, in order of preference, for after the event: add `scheduleCallWithPayer` to Lattice's
+`HSSAdapter` so an EOA funds the schedule, keep the diamond as the call's target.

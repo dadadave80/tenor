@@ -5,6 +5,7 @@ import { createPublicClient, http } from 'viem'
 import { tenorAbi } from '@/lib/abi'
 import { addresses, hashscan, hederaTestnet } from '@/lib/chain'
 import { Icon, revealStyle, useReveal, useViewport } from './primitives'
+import { REPO } from '@/lib/links'
 
 /**
  * The verified-contracts strip (FR7).
@@ -95,7 +96,7 @@ export function Contracts() {
             <a href={addresses.tenor ? hashscan('contract', addresses.tenor) : 'https://hashscan.io/testnet'} target="_blank" rel="noreferrer">
               HashScan
             </a>
-            <a href="https://github.com/dadadave80/lattice" target="_blank" rel="noreferrer">
+            <a href={REPO} target="_blank" rel="noreferrer">
               Repository
             </a>
             <a href="/contracts">All contracts</a>

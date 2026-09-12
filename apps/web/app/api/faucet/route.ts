@@ -25,8 +25,13 @@ const OPERATOR_KEY = process.env.TENOR_OPERATOR_KEY
 const USDC = process.env.NEXT_PUBLIC_USDC as `0x${string}` | undefined
 const TOKEN = process.env.NEXT_PUBLIC_ATS_TOKEN as `0x${string}` | undefined
 
-/** Testnet amounts. Generous enough to trade with, small enough that draining it is pointless. */
-const HBAR_DRIP = 25n * 10n ** 18n
+/**
+ * Testnet amounts. Enough to trade with, small enough that the faucet survives a crowd.
+ *
+ * 5 HBAR is roughly ten times what a fill costs, and twenty judges at 25 each would have been half
+ * the operator's balance.
+ */
+const HBAR_DRIP = 5n * 10n ** 18n
 const USDC_DRIP = 5_000n * 10n ** 6n
 /** Same explicit limit the client uses: the relay under-estimates `0x167` calls. */
 const HTS_GAS = 1_000_000n

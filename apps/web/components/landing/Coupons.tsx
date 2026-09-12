@@ -1,8 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { hashscan } from '@/lib/chain'
+import { createPublicClient, http } from 'viem'
+import { tenorAbi } from '@/lib/abi'
+import { addresses, hashscan, hederaTestnet } from '@/lib/chain'
 import { Icon, revealStyle, useLoop, useReveal, useViewport } from './primitives'
+
+const client = createPublicClient({ chain: hederaTestnet, transport: http() })
+const ZERO = '0x0000000000000000000000000000000000000000'
 
 /**
  * Coupons pay themselves — the Hedera Schedule Service section.
@@ -28,6 +33,37 @@ export function Coupons() {
     setNow(Date.now())
     const id = setInterval(() => setNow(Date.now()), 60_000)
     return () => clearInterval(id)
+  }, [])
+
+  // The canvas printed a sample schedule id (`0.0.5123388`) and linked to an empty transaction hash.
+  // SPEC §9.3 forbids both on this page, so the real booked schedule is read from the diamond and
+  // the line simply omits the id when there is nothing to show.
+  const [schedule, setSchedule] = useState<string | null>(null)
+  useEffect(() => {
+    const tenor = addresses.tenor
+    if (!tenor) return
+    let alive = true
+    ;(async () => {
+      for (const id of [1n, 2n, 3n]) {
+        try {
+          const addr = (await client.readContract({
+            address: tenor,
+            abi: tenorAbi,
+            functionName: 'couponScheduleAddress',
+            args: [id],
+          })) as string
+          if (addr && addr !== ZERO) {
+            if (alive) setSchedule(addr)
+            return
+          }
+        } catch {
+          return
+        }
+      }
+    })()
+    return () => {
+      alive = false
+    }
   }, [])
 
   const secs = Math.max(0, Math.ceil((8000 - ap) / 1000))
@@ -159,14 +195,32 @@ export function Coupons() {
           {paid ? (
             <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <Icon name="check" size={14} color="var(--accent)" />
-              Paid · 3 holders · 225.00 USDC
-              <a href={hashscan('transaction', '')} target="_blank" rel="noreferrer" style={{ fontFamily: 'var(--font-ui)', fontSize: 12 }}>
-                HashScan
-              </a>
+              Paid by the network
+              {schedule && (
+                <a
+                  href={hashscan('account', schedule)}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ fontFamily: 'var(--font-ui)', fontSize: 12 }}
+                >
+                  HashScan
+                </a>
+              )}
             </span>
           ) : (
             <span style={{ color: 'var(--text-2)' }}>
-              Schedule 0.0.5123388 executes in <span style={{ color: 'var(--text)' }}>{secs} s</span>
+              {schedule ? (
+                <>
+                  Schedule{' '}
+                  <a href={hashscan('account', schedule)} target="_blank" rel="noreferrer">
+                    {schedule.slice(0, 10)}…
+                  </a>{' '}
+                  executes in
+                </>
+              ) : (
+                'The booked call executes in'
+              )}{' '}
+              <span style={{ color: 'var(--text)' }}>{secs} s</span>
             </span>
           )}
         </div>
@@ -193,11 +247,12 @@ export function Coupons() {
           Coupons pay themselves.
         </h2>
         <p style={{ margin: 0, fontSize: 18, color: 'var(--text-2)' }}>
-          Scheduled on Hedera, executed by the network. Nobody clicks.
+          Booked with the Hedera Schedule Service. Fired by the network, to the second.
         </p>
         <p style={{ margin: 0, fontSize: 15, color: 'var(--text-2)' }}>
-          The issuer funds a coupon once and schedules it with the Hedera Schedule Service. At the pay date every registered
-          holder receives their share in the same transaction, and the receipt is on HashScan before anyone opens the app.
+          The issuer funds a coupon once and books it with the Hedera Schedule Service. The network fires it at the
+          second it was booked for, and every registered holder receives their share in proportion to the balance they
+          hold at that moment — payment is permissionless, so no single party has to be online for holders to be paid.
           {nextCouponDays !== null && nextCouponDays > 0 ? ` The next one is ${nextCouponDays} days away.` : ''}
         </p>
       </div>

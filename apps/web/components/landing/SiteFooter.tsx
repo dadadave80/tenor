@@ -1,9 +1,11 @@
 'use client'
 
 import { Wordmark } from './primitives'
+import { REPO } from '@/lib/links'
 
 const LINKS = [
-  { href: 'https://github.com/dadadave80/lattice', label: 'GitHub', external: true },
+  { href: REPO, label: 'GitHub', external: true },
+  { href: 'https://github.com/dadadave80/lattice', label: 'Lattice', external: true },
   { href: 'https://hashscan.io/testnet', label: 'HashScan', external: true },
   { href: '#demo', label: 'Demo video', external: false },
   { href: 'https://hedera.com', label: 'Hedera', external: true },

@@ -125,7 +125,9 @@ export default function CouponsPage() {
           Coupons
         </h1>
         <p style={{ margin: 0, fontSize: 14, color: 'var(--text-2)' }}>
-          The issuer funds a coupon and schedules it. At the pay date the network runs the payment — nobody clicks.
+          The issuer funds a coupon and books it with the Hedera Schedule Service. The network fires it at the pay
+          date, and the payment itself is permissionless — any holder can complete it, so nobody controls whether
+          holders get paid.
         </p>
       </header>
 
