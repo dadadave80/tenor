@@ -304,3 +304,25 @@ HEDERA_TESTNET_PRIVATE_KEY_0
 Consequence for the delivery plan: M1 does not concentrate as much deadline risk as SPEC §11 assumes.
 `scripts/deploy-ats.ts` can call `deploySystemWithNewBlr` directly, and the `deployTokenWithExistingBlr`
 path means the bond issuance can reuse whatever BLR that produces.
+
+---
+
+## 8. Known limitations (reviewed and accepted, not defects)
+
+**A holder who buys more after funding can stall a coupon.** `payCoupon` reverts
+`InsufficientFunding` when the register's total entitlement exceeds what was funded, and the register
+is append-only, so any registered holder who acquires more of the bond between `fundCoupon` and
+`payAt` pushes `required` above `funded` and blocks settlement until the issuer tops up. Adversarial
+review raised this as a griefing vector, and it is one — but it is also precisely what SPEC §7.3
+specifies ("Funding shortfalls (balances grew after funding) revert with `InsufficientFunding`; the
+issuer tops up and re-calls"), no funds are at risk, and the issuer has a remedy. Paying
+`min(entitlement, remaining)` or pro-rating instead would change the instrument's economics, which is
+an issuer decision rather than an implementation one. Left as specified.
+
+**Invariant 2 holds for unexpired active listings.** After `expiry`, the holder may reclaim the hold
+on the token directly while the listing is still marked active until someone calls `expire(id)`.
+During that window `remaining` is stale by design — `expire` is the state-sync call, and the listing
+cannot be filled after expiry regardless.
+
+**`quote` on an inactive listing succeeds.** It reverts only for an id that was never created, so a
+client can still price and display a historical fill. Only `fill` enforces liveness.
