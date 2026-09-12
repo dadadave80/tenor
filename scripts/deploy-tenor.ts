@@ -71,26 +71,48 @@ const args = [
 console.log(`\nforge ${args.map((a) => (a === privateKey ? '<key>' : a)).join(' ')}\n`)
 if (local) console.log('local chain — skipping Sourcify verification\n')
 const forge = spawnSync('forge', args, { cwd: CONTRACTS, stdio: ['inherit', 'pipe', 'inherit'], encoding: 'utf8' })
-process.stdout.write(forge.stdout ?? '')
-if (forge.status !== 0) {
-  throw new Error(`forge script exited ${forge.status}`)
-}
+const out = forge.stdout ?? ''
+process.stdout.write(out)
 
-// `run()` returns the diamond, and forge prints it in the `== Return ==` block keyed by the
-// return parameter's NAME, not by index.
-const tenor = /^tenor:\s*address\s+(0x[0-9a-fA-F]{40})/m.exec(forge.stdout ?? '')?.[1]
+// Order matters here. `forge script --verify` exits NON-ZERO when any contract fails to verify --
+// which happens after the broadcast has already succeeded. Throwing on the exit code first would
+// discard the address of a diamond that exists on chain, which is unrecoverable-looking for what is
+// really a Sourcify hiccup. Ten facets from a submodule with remappings plus a nested CREATE2
+// diamond is exactly where that goes wrong. So: read the address, record it, and only then complain.
+//
+// The `== Return ==` block is printed from the simulation, so the address is there either way, and
+// it is keyed by the return parameter's NAME rather than by index.
+const landed = /ONCHAIN EXECUTION COMPLETE & SUCCESSFUL/.test(out)
+const tenor = /^tenor:\s*address\s+(0x[0-9a-fA-F]{40})/m.exec(out)?.[1]
+
+if (!landed) {
+  throw new Error(
+    `The broadcast did not complete (forge exited ${forge.status}).` +
+      (tenor ? ` A diamond may exist at ${tenor} — check contracts/broadcast/ before rerunning.` : ''),
+  )
+}
 if (!tenor) {
   throw new Error(
-    'Could not find the diamond address in the forge output. It deployed — read it from the ' +
-      'broadcast log at contracts/broadcast/ and add it to deployments/296/ats.json by hand.',
+    'The broadcast completed but the diamond address was not in the output. Read it from ' +
+      'contracts/broadcast/DeployTenor.s.sol/296/run-latest.json and add it to ' +
+      'deployments/296/ats.json by hand.',
   )
 }
 
 writeRecord({ tenor })
+
+if (forge.status !== 0) {
+  console.warn(
+    `\n⚠ The deploy succeeded and is recorded, but forge exited ${forge.status} — almost certainly ` +
+      `verification.\n  Retry just the verification with:\n` +
+      `  cd contracts && forge script script/DeployTenor.s.sol:DeployTenor --rpc-url hedera-testnet --resume --verify \\\n` +
+      `    --verifier sourcify --verifier-url https://server-verify.hashscan.io`,
+  )
+}
 console.log(`\nTenor deployed`)
 console.log(`  tenor       ${tenor}`)
 console.log(`              ${scan('contract', tenor)}`)
 console.log(`  usdc        ${usdc}`)
 console.log(`  security    ${token}`)
 console.log(`  fee         ${FEE_BPS} bps · max listing ${MAX_DURATION / 86400} days`)
-console.log(`\nnext:  put NEXT_PUBLIC_TENOR_ADDRESS=${tenor} in apps/web/.env.local, then bun run integration`)
+console.log(`\nnext:  bun run sync:env  →  bun run integration`)
