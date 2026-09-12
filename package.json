@@ -4,7 +4,8 @@
   "type": "module",
   "dependencies": {
     "@hashgraph/asset-tokenization-contracts": "8.0.0",
-    "@hashgraph/sdk": "^2.81.0"
+    "@hashgraph/sdk": "^2.81.0",
+    "ethers": "^6.15.0"
   },
   "devDependencies": {
     "prettier": "^3.9.6"
@@ -14,7 +15,7 @@
     "create:usdc": "bun --env-file=contracts/.env scripts/create-usdc.ts",
     "issue:bond": "bun --env-file=contracts/.env scripts/issue-bond.ts",
     "grant:kyc": "bun --env-file=contracts/.env scripts/grant-kyc.ts",
-    "deploy:tenor": "cd contracts && forge script script/DeployTenor.s.sol:DeployTenor --rpc-url hedera-testnet --broadcast --slow --verify --verifier sourcify --verifier-url https://server-verify.hashscan.io",
+    "deploy:tenor": "bun --env-file=contracts/.env scripts/deploy-tenor.ts",
     "integration": "bun --env-file=contracts/.env scripts/integration.ts",
     "gen:abi": "bun scripts/gen-abi.ts"
   },

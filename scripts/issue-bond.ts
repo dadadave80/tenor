@@ -40,6 +40,11 @@ const factory = IFactory__factory.connect(factoryAddress, signer)
 const issuerRoles = [
   ROLES.ROLE_ISSUER, // mint / issue
   ROLES.ROLE_KYC, // grant + revoke KYC
+  // `grantKyc` takes the KYC ISSUER as its last argument and rejects any address that is not in the
+  // token's SSI issuer registry -- `AccountIsNotIssuer(address)`, which is a registry membership
+  // check, not a role check. Registering one needs ROLE_SSI_MANAGER, so without this the issuer can
+  // hold every KYC role on the token and still be unable to verify a single investor.
+  ROLES.ROLE_SSI_MANAGER,
   ROLES.ROLE_KYC_MANAGER,
   ROLES.ROLE_INTERNAL_KYC_MANAGER,
   ROLES.ROLE_PAUSER, // pause trading (demo beat 5)
@@ -86,7 +91,11 @@ const bond = await deployBondFromFactory(
         name: 'Tenor Green Note 2027',
         symbol: 'TGN27',
         decimals: DECIMALS,
-        isin: 'US0000000TGN',
+        // ATS validates the ISO 6166 check digit on-chain (`isinValidator.sol`), so this cannot be
+        // a plausible-looking string: `US0000000TGN` reverted with `WrongISINChecksum`. `XS` is the
+        // international prefix rather than a national numbering agency's space, so a demo identifier
+        // does not sit where a real registered US security would. Check digit 2 computed per ISO 6166.
+        isin: 'XS0000TGN272',
       },
       erc20VotesActivated: false,
       externalPauses: [],

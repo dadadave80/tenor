@@ -23,6 +23,15 @@ const RECORD = resolve(import.meta.dir, '../../deployments/296/ats.json')
 /** Everything M1 produces. Written incrementally so a failed step never loses what came before. */
 export type AtsRecord = {
   network?: string
+  /**
+   * Hash of block 0 — the identity of the chain INSTANCE, not just its id.
+   *
+   * A local chain can serve id 296 (`anvil --chain-id 296` is how the deploy scripts get rehearsed
+   * without spending testnet HBAR), and then this record holds addresses that mean nothing on the
+   * real network while still claiming `network: "hedera-testnet"`. Every later step reads those
+   * addresses. The genesis hash is what makes that mistake loud instead of silent.
+   */
+  genesis?: string
   deployer?: string
   /** BusinessLogicResolver proxy — this is what `SecurityDataParams.resolver` wants. */
   resolver?: string
@@ -43,6 +52,9 @@ export type AtsRecord = {
   notes?: Record<string, string>
 }
 
+/** Set by `operator()` once the chain has been identified, so `writeRecord` can stamp it. */
+let chainKey: string | undefined
+
 export function readRecord(): AtsRecord {
   if (!existsSync(RECORD)) return {}
   return JSON.parse(readFileSync(RECORD, 'utf8')) as AtsRecord
@@ -50,7 +62,7 @@ export function readRecord(): AtsRecord {
 
 /** Merges `patch` into the record on disk. Never drops keys written by an earlier step. */
 export function writeRecord(patch: AtsRecord): AtsRecord {
-  const merged = { ...readRecord(), ...patch }
+  const merged = { ...readRecord(), ...(chainKey ? { genesis: chainKey } : {}), ...patch }
   mkdirSync(dirname(RECORD), { recursive: true })
   writeFileSync(RECORD, `${JSON.stringify(merged, null, 2)}\n`)
   console.log(`  ↳ recorded in deployments/296/ats.json`)
@@ -95,6 +107,20 @@ export async function operator(opts: { minHbar?: number } = {}): Promise<{
   if (Number(net.chainId) !== CHAIN_ID) {
     throw new Error(`RPC is chain ${net.chainId}, expected ${CHAIN_ID} (Hedera testnet).`)
   }
+
+  // Block 0 pins which chain this record belongs to. Checked before the balance so a record from a
+  // local rehearsal is rejected up front rather than after a step has spent HBAR.
+  const genesis = (await provider.getBlock(0))?.hash ?? undefined
+  const existing = readRecord()
+  if (genesis && existing.genesis && existing.genesis !== genesis) {
+    throw new Error(
+      `deployments/296/ats.json was written against a different chain (genesis ` +
+        `${existing.genesis.slice(0, 10)}…, this RPC is ${genesis.slice(0, 10)}…). It is almost ` +
+        `certainly left over from a local rehearsal. Move it aside — ` +
+        `\`git checkout deployments/296/ats.json\` — before deploying for real.`,
+    )
+  }
+  chainKey = genesis
 
   // HBAR is 18 dp on the EVM side (8 dp natively).
   const balance = await provider.getBalance(address)
