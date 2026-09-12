@@ -16,3 +16,6 @@ deployments/*
 !deployments/296/
 deployments/296/*
 !deployments/296/ats.json
+apps/web/.next/
+apps/web/AGENTS.md
+apps/web/CLAUDE.md

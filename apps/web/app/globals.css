@@ -1,0 +1,164 @@
+@import './tokens.css';
+
+/* Base and keyframes, carried over from the design project's <helmet> block so the landing page
+   animates exactly as designed. Hover states live here rather than inline because the design's
+   `style-hover` attribute has no inline-style equivalent in React. */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+}
+
+/* Tabular numerals everywhere: this is a financial interface and digits must not shift width as
+   values tick. The design sets it globally rather than per-component for exactly that reason. */
+* {
+  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: var(--leading);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(63, 214, 138, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(63, 214, 138, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(63, 214, 138, 0);
+  }
+}
+
+/* The two settlement flows in the hero: USDC travels buyer→seller, the bond travels seller→buyer. */
+@keyframes flowR {
+  from {
+    left: 0%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  to {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes flowL {
+  from {
+    left: 100%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  to {
+    left: 0%;
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --- hover utilities (the design's `style-hover`) ------------------------------------------- */
+
+/* Primary pill: neutral fill, inverted text. */
+.pill-primary:hover {
+  background: var(--btn-hover);
+  text-decoration: none;
+}
+
+/* Secondary pill: hairline outline that fills on hover. */
+.pill-ghost:hover {
+  background: var(--surface);
+  text-decoration: none;
+}
+
+/* Nav and footer links: muted until hovered, and never underlined. */
+.link-muted {
+  color: var(--text-2);
+}
+
+.link-muted:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* Cards that are links (facets, listings). */
+.card-link:hover {
+  border-color: var(--text-2);
+  text-decoration: none;
+}
+
+.toggle-row:hover {
+  border-color: var(--text-2);
+}
+
+.wordmark:hover {
+  text-decoration: none;
+}

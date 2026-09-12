@@ -1,0 +1,88 @@
+/* Tenor design tokens v2 — imported verbatim from the Claude Design project
+   (692ca674-6c56-4e88-829c-6d6375f084f5, tokens.css). Dark is :root; light is
+   [data-theme="light"]. Do not hand-edit: change it in the design and re-import. */
+:root {
+  --bg: #0A0A0A;
+  --surface: #121212;
+  --surface-2: #1B1B1B;
+  --surface-tint: #122019;
+  --border: #232323;
+  --text: #F2F2F2;
+  --text-2: #8C8C8C;
+  --accent: #3DD68C;
+  --accent-2: #7FE7B4;
+  --warning: #E5B04A;
+  --danger: #F26B60;
+  --info: #7FA6EA;
+  --on-accent: #06130C;
+  --btn: #F2F2F2;          /* primary button fill (neutral pill) */
+  --btn-fg: #0A0A0A;
+  --btn-hover: #FFFFFF;
+  /* derived tints — needed for pills and banners */
+  --warning-soft: #2B2416;
+  --danger-soft: #301C1A;
+  --info-soft: #1A2333;
+  --chart-fill-top: rgba(63, 214, 138, .35);
+  --chart-fill-bottom: rgba(63, 214, 138, 0);
+
+  --font-display: "Inter Display", "Inter", system-ui, sans-serif;
+  --font-ui: "Inter", system-ui, sans-serif;
+  /* hashes and raw data only; numerals use --font-ui with tabular-nums */
+  --font-mono: "Geist Mono", "IBM Plex Mono", ui-monospace, monospace;
+  --text-12: 12px; --text-13: 13px; --text-14: 14px; --text-16: 16px; --text-20: 20px;
+  --text-24: 24px; --text-32: 32px; --text-48: 48px; --text-64: 64px;
+  --tracking-display: -0.02em;
+  --leading: 1.5;
+
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-6: 24px; --space-8: 32px; --space-12: 48px; --space-16: 64px;
+
+  --radius-control: 999px;   /* buttons and chips are pills */
+  --radius-input: 8px;
+  --radius-card: 12px;
+  --radius-hero: 16px;
+  --radius-pill: 999px;
+
+  --control-h: 44px;
+  --row-h: 48px;
+  --sidebar-w: 240px;
+  --sidebar-item-h: 36px;
+  --main-max: 880px;
+  --rail-w: 320px;
+  --drawer-w: 440px;
+  --tray-w: 400px;
+
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, .4);
+  --shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  --ease-out: cubic-bezier(.2, 0, 0, 1);
+  --dur-toast: 120ms;
+  --dur-drawer: 160ms;
+  --dur-count: 400ms;
+  --dur-chart: 600ms;
+}
+
+[data-theme="light"] {
+  --bg: #F7F7F7;
+  --surface: #FFFFFF;
+  --surface-2: #F0F0F0;
+  --surface-tint: #E6F5EC;
+  --border: #E4E4E4;
+  --text: #111111;
+  --text-2: #6B6B6B;
+  --accent: #1B7F4B;
+  --accent-2: #2FA36B;
+  --warning: #B7791F;
+  --danger: #B42318;
+  --info: #2E5AAC;
+  --on-accent: #FFFFFF;
+  --btn: #111111;
+  --btn-fg: #FFFFFF;
+  --btn-hover: #2A2A2A;
+  --warning-soft: #FBF1DF;
+  --danger-soft: #FBE7E4;
+  --info-soft: #E6EDFA;
+  --chart-fill-top: rgba(27, 127, 75, .35);
+  --chart-fill-bottom: rgba(27, 127, 75, 0);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, .08);
+  --shadow: 0 8px 24px rgba(0, 0, 0, .08);
+}
