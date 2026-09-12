@@ -13,7 +13,7 @@
  * Note the security token is a plain Solidity diamond, not an HTS token, so B and C need no HTS
  * association to hold it. Only USDC does.
  *
- * Usage:  bun scripts/grant-kyc.ts
+ * Usage:  bun run grant:kyc
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'

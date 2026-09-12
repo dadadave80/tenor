@@ -7,10 +7,16 @@
  * `requireDefaultPartitionWithSinglePartition`. Get any of them wrong at issuance and every listing
  * reverts, with no way to fix it short of re-issuing. Read `docs/GROUND-TRUTH.md` §1 before changing them.
  *
- * Usage:  bun scripts/issue-bond.ts
+ * Usage:  bun run issue:bond
  */
 import { IFactory__factory } from '@hashgraph/asset-tokenization-contracts/typechain-types'
-import { DEFAULT_PARTITION, ROLES, deployBondFromFactory } from '@hashgraph/asset-tokenization-contracts/scripts'
+import {
+  DEFAULT_PARTITION,
+  RegulationSubType,
+  RegulationType,
+  ROLES,
+  deployBondFromFactory,
+} from '@hashgraph/asset-tokenization-contracts/scripts'
 import { operator, scan, writeRecord, requireRecord } from './lib/ats'
 
 const { resolver, factory: factoryAddress, bondConfigId, bondConfigVersion } = requireRecord([
@@ -102,8 +108,8 @@ const bond = await deployBondFromFactory(
     proceedRecipientsData: [],
   },
   {
-    regulationType: 1, // REG_S
-    regulationSubType: 0, // NONE
+    regulationType: RegulationType.REG_S,
+    regulationSubType: RegulationSubType.NONE,
     additionalSecurityData: {
       countriesControlListType: false,
       listOfCountries: '',
@@ -129,5 +135,5 @@ Tenor Green Note 2027 issued
 
   clearing disabled · partitions unprotected · single partition  → third-party holds will work
 
-next:  bun scripts/grant-kyc.ts
+next:  bun run grant:kyc
 `)

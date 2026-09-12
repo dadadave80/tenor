@@ -3,9 +3,17 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@hashgraph/asset-tokenization-contracts": "8.0.0"
+    "@hashgraph/asset-tokenization-contracts": "8.0.0",
+    "@hashgraph/sdk": "^2.81.0"
   },
   "devDependencies": {
     "prettier": "^3.9.6"
+  },
+  "scripts": {
+    "deploy:ats": "bun --env-file=contracts/.env scripts/deploy-ats.ts",
+    "create:usdc": "bun --env-file=contracts/.env scripts/create-usdc.ts",
+    "issue:bond": "bun --env-file=contracts/.env scripts/issue-bond.ts",
+    "grant:kyc": "bun --env-file=contracts/.env scripts/grant-kyc.ts",
+    "integration": "bun --env-file=contracts/.env scripts/integration.ts"
   }
 }

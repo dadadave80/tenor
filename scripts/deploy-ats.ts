@@ -12,13 +12,14 @@
  *   - checkpointing is left ON, so a relay hiccup half way through resumes instead of restarting.
  *     Re-running this script picks up where it stopped.
  *
- * Usage:  bun scripts/deploy-ats.ts
+ * Usage:  bun run deploy:ats
  */
 import { deploySystemWithNewBlr } from '@hashgraph/asset-tokenization-contracts/scripts'
 import { NETWORK, operator, scan, writeRecord } from './lib/ats'
 
 const t0 = Date.now()
-const { signer } = await operator()
+// ~46 facets, proxies and configurations. Refuse rather than run dry mid-deploy.
+const { signer } = await operator({ minHbar: 200 })
 
 console.log(`\ndeploying the ATS system to ${NETWORK} — this takes a while (~46 facets)\n`)
 
@@ -33,6 +34,9 @@ const out = await deploySystemWithNewBlr(signer, NETWORK, {
   verifyDeployment: true,
   // Auto-resume an incomplete deployment rather than starting over.
   autoResume: true,
+  // Keep checkpoints at the repo root. Anywhere under node_modules is destroyed by the next
+  // install, and losing the checkpoint mid-deploy means redoing all 46 facets.
+  checkpointDir: './deployments/.checkpoints',
 })
 
 const resolver = out.infrastructure.blr.proxy
@@ -60,7 +64,7 @@ ATS system deployed in ${((Date.now() - t0) / 1000).toFixed(0)}s
 
   facets ${out.summary.totalFacets} · contracts ${out.summary.totalContracts} · gas ${out.summary.gasUsed}
 
-next:  bun scripts/issue-bond.ts
+next:  bun run create:usdc  →  bun run issue:bond
 `)
 
 if (!out.summary.success) {

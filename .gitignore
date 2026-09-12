@@ -8,5 +8,11 @@ contracts/broadcast/
 .DS_Store
 apps/web/.next/
 apps/web/node_modules/
-deployments/
+
+# Deployment records: keep the address book, never the keys.
+# Git cannot re-include a file whose parent directory is excluded, so each level is
+# re-opened explicitly before the leaf is whitelisted.
+deployments/*
+!deployments/296/
+deployments/296/*
 !deployments/296/ats.json

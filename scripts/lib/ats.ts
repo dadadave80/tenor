@@ -64,9 +64,20 @@ export function writeRecord(patch: AtsRecord): AtsRecord {
  * ourselves. That is also what we want: full control over the provider, and no dependence on a
  * non-exported internal.
  */
-export async function operator(): Promise<{ signer: Signer; address: string; provider: JsonRpcProvider }> {
-  const pk = process.env.PRIVATE_KEY ?? process.env.HEDERA_TESTNET_PRIVATE_KEY_0
-  if (!pk) throw new Error('Set PRIVATE_KEY in contracts/.env (a funded Hedera testnet ECDSA key).')
+export async function operator(opts: { minHbar?: number } = {}): Promise<{
+  signer: Signer
+  address: string
+  provider: JsonRpcProvider
+}> {
+  const raw = process.env.PRIVATE_KEY ?? process.env.HEDERA_TESTNET_PRIVATE_KEY_0
+  if (!raw) {
+    throw new Error(
+      'Set PRIVATE_KEY in contracts/.env (a funded Hedera testnet ECDSA key), and run these ' +
+        'scripts via `bun run <script>` so the env file is loaded.',
+    )
+  }
+  // portal.hedera.com shows the key without the 0x prefix; ethers requires it.
+  const pk = raw.startsWith('0x') ? raw : `0x${raw}`
 
   const rpc = process.env.HEDERA_TESTNET_RPC ?? process.env.HEDERA_TESTNET_JSON_RPC_ENDPOINT ?? DEFAULT_RPC
 
@@ -85,13 +96,28 @@ export async function operator(): Promise<{ signer: Signer; address: string; pro
     throw new Error(`RPC is chain ${net.chainId}, expected ${CHAIN_ID} (Hedera testnet).`)
   }
 
+  // HBAR is 18 dp on the EVM side (8 dp natively).
   const balance = await provider.getBalance(address)
+  const hbar = Number(balance) / 1e18
   console.log(`operator ${address}`)
-  console.log(`balance  ${(Number(balance) / 1e18).toFixed(4)} HBAR`)
+  console.log(`balance  ${hbar.toFixed(4)} HBAR`)
+
+  // Checked up front on purpose: the ATS system deploy is ~46 facets plus proxies, and running dry
+  // at facet 30 wastes both the HBAR already spent and the wall-clock.
+  const min = opts.minHbar ?? 0
   if (balance === 0n) {
     throw new Error(
-      `${address} has no HBAR. Fund it at https://portal.hedera.com (or send HBAR to that address ` +
-        `from an existing testnet account — a transfer to a fresh EVM address creates the account).`,
+      `${address} has no HBAR, so it is not even a Hedera account yet.\n` +
+        `Create a testnet account at https://portal.hedera.com — choose an ECDSA key — and put that ` +
+        `key in contracts/.env as PRIVATE_KEY and HEDERA_TESTNET_PRIVATE_KEY_0. The portal issues its ` +
+        `own keyed account; it does not send HBAR to an address you supply. Alternatively, transfer ` +
+        `HBAR to ${address} from an existing testnet account, which creates the account for that key.`,
+    )
+  }
+  if (hbar < min) {
+    throw new Error(
+      `${address} holds ${hbar.toFixed(2)} HBAR; this step wants at least ${min}. ` +
+        `Top it up before continuing rather than failing part-way through.`,
     )
   }
   return { signer, address, provider }
