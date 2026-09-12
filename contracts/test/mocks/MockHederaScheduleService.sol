@@ -172,13 +172,11 @@ contract MockHederaScheduleService {
     /// @param value Tinybars to forward.
     /// @param callData The calldata.
     /// @return scheduleAddress The address that tuple maps to.
-    function scheduleAddressFor(
-        address to,
-        uint256 expirySecond,
-        uint256 gasLimit,
-        uint64 value,
-        bytes memory callData
-    ) public pure returns (address scheduleAddress) {
+    function scheduleAddressFor(address to, uint256 expirySecond, uint256 gasLimit, uint64 value, bytes memory callData)
+        public
+        pure
+        returns (address scheduleAddress)
+    {
         return address(uint160(uint256(keccak256(abi.encode(to, expirySecond, gasLimit, value, callData)))));
     }
 

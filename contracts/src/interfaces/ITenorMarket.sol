@@ -100,6 +100,19 @@ interface ITenorMarket {
     /// @notice The token reported failure creating the hold without reverting.
     error HoldCreationFailed(address token, address seller);
 
+    /// @notice `token` is not the security token this venue trades.
+    /// @dev The market is pinned to one instrument at initialisation. Accepting an arbitrary token would
+    ///      let a seller settle a fill against a contract of their own choosing: `fill` pays the seller
+    ///      before the delivery leg completes, so a fake token that reports a hold and then delivers
+    ///      nothing would take the buyer's USDC for nothing.
+    error TokenNotListable(address token, address expected);
+
+    /// @notice A hold call on the token returned `false` instead of reverting.
+    error HoldCallFailed(address token, uint256 id);
+
+    /// @notice The token reports more decimals than the market can price against.
+    error UnsupportedDecimals(address token, uint8 decimals);
+
     //*//////////////////////////////////////////////////////////////////////////
     //                                   WRITES
     //////////////////////////////////////////////////////////////////////////*//
@@ -158,4 +171,7 @@ interface ITenorMarket {
 
     /// @notice The cap on listing lifetime, in seconds.
     function maxDuration() external view returns (uint64 duration);
+
+    /// @notice The one ATS security token this venue trades.
+    function securityToken() external view returns (address token);
 }

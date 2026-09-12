@@ -77,6 +77,11 @@ contract TenorMarket is ITenorMarket {
     }
 
     /// @inheritdoc ITenorMarket
+    function securityToken() external view virtual override returns (address token) {
+        return TenorMarketLib.securityToken();
+    }
+
+    /// @inheritdoc ITenorMarket
     function usdc() external view virtual override returns (address usdcToken) {
         return TenorMarketLib.usdc();
     }
@@ -107,12 +112,13 @@ contract TenorMarket is ITenorMarket {
     ///      `maxDuration()` 0x6db5c8fd
     ///      `nextListingId()` 0xaaccf1ec
     ///      `quote(uint256,uint256)` 0x315f1a41
+    ///      `securityToken()` 0xb84dfbd2
     ///      `setFeeBps(uint16)` 0x023b1fc9
     ///      `setMaxDuration(uint64)` 0xf0147832
     ///      `usdc()` 0x3e413bee
     /// @return selectors The packed selector list.
     function exportSelectors() external pure virtual returns (bytes memory selectors) {
         selectors =
-            hex"40e58ee5bf81bf4324a9d8533c29fc43107a274a11ae49dc6db5c8fdaaccf1ec315f1a41023b1fc9f01478323e413bee";
+            hex"40e58ee5bf81bf4324a9d8533c29fc43107a274a11ae49dc6db5c8fdaaccf1ec315f1a41b84dfbd2023b1fc9f01478323e413bee";
     }
 }

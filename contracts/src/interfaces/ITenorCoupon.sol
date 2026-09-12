@@ -43,7 +43,11 @@ interface ITenorCoupon {
     event CouponScheduled(uint256 indexed couponId, address scheduleAddress, uint64 payAt, bytes32 jobId);
 
     /// @notice The issuer cancelled a booked schedule. The coupon can be re-scheduled or paid manually.
-    event CouponScheduleCancelled(uint256 indexed couponId, address scheduleAddress);
+    /// @dev `responseCode` is the Schedule Service's answer to the delete, which is deliberately NOT
+    ///      required to succeed. A schedule that already fired cannot be deleted, and refusing to
+    ///      cancel in that case would strand the coupon: the nonce bump that permits a re-booking is
+    ///      unconditional, and this code records what actually happened to the old booking.
+    event CouponScheduleCancelled(uint256 indexed couponId, address scheduleAddress, int64 responseCode);
 
     /// @notice A coupon settled. `totalPaid` may be below the entitlement if holders were skipped.
     event CouponPaid(uint256 indexed couponId, uint256 totalPaid, uint256 holderCount);
@@ -86,6 +90,13 @@ interface ITenorCoupon {
     /// @notice The coupon has not settled, so surplus cannot be withdrawn yet.
     error CouponNotSettled(uint256 couponId);
 
+    /// @notice A schedule is booked for this coupon, so its terms cannot be changed.
+    /// @dev The booked call fires at the second it was booked for. Letting `payAt` or `amountPerToken`
+    ///      move underneath it would leave the network firing a payment for terms that no longer
+    ///      exist. Call `cancelSchedule` first, then re-fund and re-schedule. Topping up funding at
+    ///      the SAME terms is always allowed.
+    error CouponTermsLocked(uint256 couponId, uint64 payAt, uint256 amountPerToken);
+
     //*//////////////////////////////////////////////////////////////////////////
     //                                   ISSUER
     //////////////////////////////////////////////////////////////////////////*//
@@ -96,7 +107,10 @@ interface ITenorCoupon {
     function registerHolders(address[] calldata holders) external;
 
     /// @notice Funds coupon `couponId`, pulling `amountPerToken * totalRegisteredBalance` USDC from the caller.
-    /// @dev The issuer approves the diamond for that amount first. Requires `ISSUER_ROLE`.
+    /// @dev The issuer approves the diamond for that amount first. Requires `ISSUER_ROLE`. Callable again
+    ///      to top up after holder balances grow. While a schedule is booked the terms are frozen —
+    ///      `payAt` and `amountPerToken` must match the stored values or this reverts
+    ///      {CouponTermsLocked}; cancel the schedule to re-date.
     function fundCoupon(uint256 couponId, uint256 amountPerToken, uint64 payAt) external;
 
     /// @notice Books `payCoupon(couponId)` with the Hedera Schedule Service to fire at `payAt`.

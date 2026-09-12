@@ -45,14 +45,10 @@ contract DeployTenor is BaseDeploy {
     /// @return cuts The facet cuts.
     /// @return init The {MultiInit} running {TenorInit} then the diamond introspection init.
     /// @return initCalldata The matching `multiInit` calldata.
-    function buildCuts(
-        address admin,
-        address issuer,
-        address usdc,
-        address token,
-        uint16 feeBps,
-        uint64 maxDuration
-    ) public returns (FacetCut[] memory cuts, address init, bytes memory initCalldata) {
+    function buildCuts(address admin, address issuer, address usdc, address token, uint16 feeBps, uint64 maxDuration)
+        public
+        returns (FacetCut[] memory cuts, address init, bytes memory initCalldata)
+    {
         cuts = new FacetCut[](10);
         // --- diamond plumbing -----------------------------------------------------------------
         cuts[0] = _cut(address(new ERC165Facet()));
@@ -70,8 +66,7 @@ contract DeployTenor is BaseDeploy {
         cuts[9] = _cut(address(new TenorCoupon()));
 
         (init, initCalldata) = _withUpgradeableIntrospection(
-            address(new TenorInit()),
-            abi.encodeCall(TenorInit.init, (admin, issuer, usdc, token, feeBps, maxDuration))
+            address(new TenorInit()), abi.encodeCall(TenorInit.init, (admin, issuer, usdc, token, feeBps, maxDuration))
         );
     }
 

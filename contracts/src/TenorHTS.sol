@@ -31,6 +31,8 @@ library TenorHTS {
     error TenorHTSCallFailed(bytes4 selector, int64 responseCode);
 
     /// @notice An amount could not be represented as the `int64` HTS expects.
+    /// @dev Only {transferFrom} raises this. {tryTransfer} must never revert, so it reports the same
+    ///      condition as a response code instead.
     error TenorHTSAmountOverflow(uint256 amount);
 
     /// @notice Spends the allowance `from` granted the diamond, moving `amount` of `token` from `from` to `to`.
@@ -58,7 +60,11 @@ library TenorHTS {
     /// @param amount The amount in the token's atomic units.
     /// @return code The Hedera response code; `HederaResponseCodes.SUCCESS` (22) on success.
     function tryTransfer(address token, address to, uint256 amount) internal returns (int64 code) {
-        if (amount > uint256(uint64(type(int64).max))) revert TenorHTSAmountOverflow(amount);
+        // This function is TOTAL by contract: `payCoupon` records whatever comes back and moves on to
+        // the next holder, so a revert here would be the one thing able to strand every other holder's
+        // coupon. An amount too large for the `int64` HTS takes is therefore reported as a code — with
+        // no call attempted — rather than raised.
+        if (amount > uint256(uint64(type(int64).max))) return HederaResponseCodes.UNKNOWN;
         code = _callForCode(
             abi.encodeCall(IHederaTokenService.transferToken, (token, address(this), to, int64(uint64(amount))))
         );

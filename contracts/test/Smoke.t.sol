@@ -62,7 +62,8 @@ contract SmokeTest is TenorTestBase {
 
         _enableSelling(alice, amount);
         vm.prank(alice);
-        uint256 id = market.list(address(atsToken), bytes32(uint256(1)), amount, price, uint64(block.timestamp + 1 days));
+        uint256 id =
+            market.list(address(atsToken), bytes32(uint256(1)), amount, price, uint64(block.timestamp + 1 days));
 
         (uint256 cost,) = market.quote(id, 10 * ONE_TOKEN);
         _fundUsdc(carol, cost);

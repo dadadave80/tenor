@@ -34,17 +34,13 @@ contract TenorInit {
     /// @param admin The address granted `DEFAULT_ADMIN_ROLE` and both HTS roles.
     /// @param issuer The address granted `ISSUER_ROLE` and `HSS_SCHEDULER_ROLE`.
     /// @param usdc The HTS token the market settles in and coupons are paid in (6 dp).
-    /// @param token The ATS security token whose holders receive coupons.
+    /// @param token The ATS security token: the only token the market will list, and the one whose
+    ///        holders receive coupons.
     /// @param feeBps The initial protocol fee in basis points; must be <= 100.
     /// @param maxDuration The initial cap on how far ahead a listing may expire, in seconds.
-    function init(
-        address admin,
-        address issuer,
-        address usdc,
-        address token,
-        uint16 feeBps,
-        uint64 maxDuration
-    ) external {
+    function init(address admin, address issuer, address usdc, address token, uint16 feeBps, uint64 maxDuration)
+        external
+    {
         AccessControlLib.__AccessControl_init(admin);
         AccessControlLib._grantRole(HTS_MANAGER_ROLE, admin);
         AccessControlLib._grantRole(HTS_OPERATOR_ROLE, admin);
@@ -55,7 +51,7 @@ contract TenorInit {
         HTSAdapterLib.__HTSAdapter_init();
         HSSAdapterLib.__HSSAdapter_init();
 
-        TenorMarketLib.__TenorMarket_init(usdc, feeBps, maxDuration);
+        TenorMarketLib.__TenorMarket_init(usdc, token, feeBps, maxDuration);
         TenorCouponLib.__TenorCoupon_init(token, usdc);
     }
 }

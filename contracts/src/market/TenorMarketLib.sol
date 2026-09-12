@@ -25,6 +25,11 @@ uint16 constant MARKET_MAX_FEE_BPS = 100;
 /// @dev Basis-point denominator for the fee cut of a fill's gross cost.
 uint256 constant MARKET_BPS_DENOMINATOR = 10_000;
 
+/// @dev Ceiling on a listed token's `decimals()`. `10 ** decimals` is the divisor in every `cost`, so an
+///      absurd value would overflow the exponentiation and leave the listing permanently unfillable. 36 is
+///      far above any real security token (ATS issues this instrument at 6) and far below `uint256`'s limit.
+uint8 constant MARKET_MAX_TOKEN_DECIMALS = 36;
+
 /// @notice The single ERC-20 view the market needs from a security token.
 /// @dev Declared locally rather than pulling in an ERC-20 library for one getter. ATS serves it from its
 ///      `Core` facet (`ICore.decimals()`), so every ATS-issued token answers it. Read once per listing and
@@ -40,6 +45,13 @@ interface IERC20Decimals {
 struct MarketStorage {
     /// @notice The HTS USDC token every fill and fee settles in.
     address usdc;
+    /// @notice The ONE ATS security token this venue trades. Fixed at initialisation.
+    /// @dev A listing names its token, but the named token is checked against this. Without that check
+    ///      `fill` would pay a seller real USDC on the say-so of a seller-supplied contract: a fake
+    ///      token can return success from `createHoldFromByPartition` and then do nothing on
+    ///      `executeHoldByPartition`, leaving the buyer paid-up and empty-handed. Tenor is a
+    ///      single-instrument venue, so pinning the token closes that hole outright.
+    address securityToken;
     /// @notice Protocol fee taken from a fill's gross cost, in basis points. Never above `MARKET_MAX_FEE_BPS`.
     uint16 feeBps;
     /// @notice Cap on how far past `block.timestamp` a listing may expire, in seconds.
@@ -86,14 +98,18 @@ library TenorMarketLib {
     ///      seeding (the first listing takes id 0) and `feeBps` is validated against the same ceiling
     ///      {setFeeBps} enforces, so an over-cap fee can never be installed at deploy time either.
     /// @param usdcToken The HTS USDC token the market settles in.
+    /// @param token The ATS security token this venue trades; the only token `list` will accept.
     /// @param initialFeeBps The starting protocol fee in basis points; at most `MARKET_MAX_FEE_BPS`.
     /// @param initialMaxDuration The starting cap on listing lifetime, in seconds.
-    function __TenorMarket_init(address usdcToken, uint16 initialFeeBps, uint64 initialMaxDuration) internal {
+    function __TenorMarket_init(address usdcToken, address token, uint16 initialFeeBps, uint64 initialMaxDuration)
+        internal
+    {
         InitializableLib.checkInitializing(InitializableLib.initializableSlot());
         if (initialFeeBps > MARKET_MAX_FEE_BPS) revert ITenorMarket.FeeTooHigh(initialFeeBps);
 
         MarketStorage storage $ = marketStorage();
         $.usdc = usdcToken;
+        $.securityToken = token;
         $.feeBps = initialFeeBps;
         $.maxDuration = initialMaxDuration;
 
@@ -118,7 +134,7 @@ library TenorMarketLib {
     ///      ERC-20 allowance granted to the diamond, and reverts otherwise; a non-reverting `false` surfaces as
     ///      {ITenorMarket.HoldCreationFailed}. Decimals are cached here so `quote` and `fill` need no external
     ///      call [DEV-6]. Blocked while the market is paused.
-    /// @param token The ATS security token to list.
+    /// @param token The ATS security token to list; must equal the venue's configured security token.
     /// @param partition The ATS partition to hold under (the token's single default partition).
     /// @param amount The number of tokens to reserve, in the token's atomic units.
     /// @param pricePerToken USDC atomic units (6 dp) per WHOLE security token.
@@ -133,6 +149,10 @@ library TenorMarketLib {
         if (pricePerToken == 0) revert ITenorMarket.InvalidPrice();
 
         MarketStorage storage $ = marketStorage();
+        // The token is named in calldata but never trusted from it. `fill` pays the seller before the
+        // delivery leg settles, so a seller-supplied contract that fakes a hold could take a buyer's
+        // USDC and deliver nothing. This venue trades one instrument, so the named token must be it.
+        if (token != $.securityToken) revert ITenorMarket.TokenNotListable(token, $.securityToken);
 
         uint64 minExpiry = uint64(block.timestamp) + 1;
         uint256 latest = block.timestamp + $.maxDuration;
@@ -143,19 +163,8 @@ library TenorMarketLib {
 
         id = $.nextId++;
 
-        (bool success, uint256 holdId) = IHoldByPartition(token).createHoldFromByPartition(
-            partition,
-            msg.sender,
-            IHoldTypes.Hold({
-                amount: amount,
-                expirationTimestamp: uint256(expiry),
-                escrow: address(this),
-                to: address(0),
-                data: abi.encode(id)
-            }),
-            ""
-        );
-        if (!success) revert ITenorMarket.HoldCreationFailed(token, msg.sender);
+        uint256 holdId = _createHold(token, partition, amount, expiry, id);
+        uint8 decimals_ = _checkedDecimals(token);
 
         $.listings[id] = ITenorMarket.Listing({
             token: token,
@@ -165,7 +174,7 @@ library TenorMarketLib {
             remaining: amount,
             pricePerToken: pricePerToken,
             expiry: expiry,
-            tokenDecimals: IERC20Decimals(token).decimals(),
+            tokenDecimals: decimals_,
             active: true
         });
 
@@ -207,9 +216,16 @@ library TenorMarketLib {
         // Interactions.
         TenorHTS.transferFrom(usdcToken, msg.sender, seller, cost - fee);
         if (fee > 0) TenorHTS.transferFrom(usdcToken, msg.sender, address(this), fee);
-        IHoldByPartition(token).executeHoldByPartition(
-            IHoldTypes.HoldIdentifier({partition: partition, tokenHolder: seller, holdId: holdId}), msg.sender, amount
-        );
+        (bool delivered,) = IHoldByPartition(token)
+            .executeHoldByPartition(
+                IHoldTypes.HoldIdentifier({partition: partition, tokenHolder: seller, holdId: holdId}),
+                msg.sender,
+                amount
+            );
+        // The seller has already been paid at this point, so a delivery leg that reports failure
+        // without reverting must take the payment down with it. ATS reverts instead of returning
+        // false, but this is the one place where trusting that would cost the buyer their money.
+        if (!delivered) revert ITenorMarket.HoldCallFailed(token, id);
 
         emit ITenorMarket.Filled(id, msg.sender, amount, cost, fee);
 
@@ -227,18 +243,27 @@ library TenorMarketLib {
 
         ITenorMarket.Listing storage listing = marketStorage().listings[id];
 
-        if (listing.seller != msg.sender) revert ITenorMarket.NotSeller(id);
+        // Existence before ownership: an id that was never created has `seller == address(0)`, and
+        // reporting that as `NotSeller` would be misleading. `fill`, `expire` and `quote` all lead with
+        // the existence check, so `cancel` matches them.
         if (!listing.active) revert ITenorMarket.ListingNotActive(id);
+        if (listing.seller != msg.sender) revert ITenorMarket.NotSeller(id);
         if (block.timestamp >= listing.expiry) revert ITenorMarket.ListingExpired(id);
 
         uint256 released = listing.remaining;
         listing.remaining = 0;
         listing.active = false;
 
-        IHoldByPartition(listing.token).releaseHoldByPartition(
-            IHoldTypes.HoldIdentifier({partition: listing.partition, tokenHolder: msg.sender, holdId: listing.holdId}),
-            released
-        );
+        bool released_ = IHoldByPartition(listing.token)
+            .releaseHoldByPartition(
+                IHoldTypes.HoldIdentifier({
+                    partition: listing.partition, tokenHolder: msg.sender, holdId: listing.holdId
+                }),
+                released
+            );
+        // ATS reverts rather than returning false, so this is belt-and-braces — but a hold call that
+        // reports failure must never be treated as settled.
+        if (!released_) revert ITenorMarket.HoldCallFailed(listing.token, id);
 
         emit ITenorMarket.Cancelled(id, released);
 
@@ -328,8 +353,14 @@ library TenorMarketLib {
         return marketStorage().nextId;
     }
 
-    /// @notice The USDC token the market settles in.
-    /// @return usdcToken The HTS USDC token address.
+    /// @notice The one ATS security token this venue trades.
+    /// @return token The configured security token.
+    function securityToken() internal view returns (address token) {
+        token = marketStorage().securityToken;
+    }
+
+    /// @notice The HTS USDC token the market settles in.
+    /// @return usdcToken The settlement token.
     function usdc() internal view returns (address usdcToken) {
         return marketStorage().usdc;
     }
@@ -349,6 +380,51 @@ library TenorMarketLib {
     //*//////////////////////////////////////////////////////////////////////////
     //                                 INTERNALS
     //////////////////////////////////////////////////////////////////////////*//
+
+    /// @dev Places the ATS hold backing listing `id` and returns the id the token assigned it.
+    ///      Extracted from {list} so its locals do not have to be live alongside the rest — together
+    ///      they overflow the EVM's stack slots under the non-IR optimiser.
+    ///
+    ///      Escrow, recipient and expiry are set HERE, never taken from calldata: the escrow is the
+    ///      diamond (so only the diamond can execute the hold), the recipient is left open so the
+    ///      buyer can be chosen at fill time, and `data` carries the listing id so a hold on the token
+    ///      can always be traced back to its listing.
+    /// @param token The ATS security token.
+    /// @param partition The partition to hold under.
+    /// @param amount Tokens to reserve.
+    /// @param expiry The hold's expiration timestamp, equal to the listing's.
+    /// @param id The listing id, recorded in the hold's `data`.
+    /// @return holdId The id the token assigned the hold.
+    function _createHold(address token, bytes32 partition, uint256 amount, uint64 expiry, uint256 id)
+        private
+        returns (uint256 holdId)
+    {
+        bool success;
+        (success, holdId) = IHoldByPartition(token)
+            .createHoldFromByPartition(
+                partition,
+                msg.sender,
+                IHoldTypes.Hold({
+                    amount: amount,
+                    expirationTimestamp: uint256(expiry),
+                    escrow: address(this),
+                    to: address(0),
+                    data: abi.encode(id)
+                }),
+                ""
+            );
+        if (!success) revert ITenorMarket.HoldCreationFailed(token, msg.sender);
+    }
+
+    /// @dev The token's decimals, rejected if too large to price against.
+    ///      `10 ** decimals` is the divisor in every later `quote` and `fill` for the listing, so an
+    ///      absurd value is caught at the one point it is read rather than by a buyer whose fill reverts.
+    /// @param token The ATS security token.
+    /// @return decimals_ The token's decimals.
+    function _checkedDecimals(address token) private view returns (uint8 decimals_) {
+        decimals_ = IERC20Decimals(token).decimals();
+        if (decimals_ > MARKET_MAX_TOKEN_DECIMALS) revert ITenorMarket.UnsupportedDecimals(token, decimals_);
+    }
 
     /// @dev `cost = amount * pricePerToken / 10**tokenDecimals` and `fee = cost * feeBps / 10_000`, both
     ///      floored and both full-precision: {Math.mulDiv} carries the intermediate product in 512 bits, so a

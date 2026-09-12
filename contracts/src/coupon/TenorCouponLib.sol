@@ -7,6 +7,7 @@ import {HederaResponseCodes} from "@lattice/interfaces/external/hedera/HederaRes
 import {IHederaTokenService} from "@lattice/interfaces/external/hedera/IHederaTokenService.sol";
 import {HSSAdapterLib} from "@lattice/oracles/hedera/HSSAdapterLib.sol";
 import {InitializableLib} from "@lattice/utils/libraries/InitializableLib.sol";
+import {TenorHSS} from "../TenorHSS.sol";
 import {TenorHTS} from "../TenorHTS.sol";
 import {ITenorCoupon} from "../interfaces/ITenorCoupon.sol";
 
@@ -248,6 +249,17 @@ library TenorCouponLib {
         ITenorCoupon.Coupon storage coupon = $.coupons[couponId];
         if (coupon.settled) revert ITenorCoupon.CouponAlreadySettled(couponId);
 
+        // A live booking pins the terms it was booked against. Moving `payAt` or `amountPerToken`
+        // underneath a schedule the network has already accepted desynchronises the two: the call
+        // still fires at the OLD second, which is now either premature (reverting `CouponNotDue`) or
+        // late. Re-dating therefore requires an explicit `cancelSchedule` first; a pure top-up of the
+        // same terms stays allowed, which is the case the issuer actually needs after balances grow.
+        if (HSSAdapterLib.scheduleOf(jobIdOf(couponId, coupon.scheduleNonce)) != address(0)) {
+            if (coupon.payAt != payAt || coupon.amountPerToken != amountPerToken) {
+                revert ITenorCoupon.CouponTermsLocked(couponId, coupon.payAt, coupon.amountPerToken);
+            }
+        }
+
         uint256 funded = coupon.funded;
         uint256 required = couponRequirement(amountPerToken);
         uint256 topUp = required > funded ? required - funded : 0;
@@ -272,9 +284,8 @@ library TenorCouponLib {
     /// @param gasLimit Gas the network must reserve for the scheduled call.
     function scheduleCoupon(uint256 couponId, uint256 gasLimit) internal {
         bytes memory payload = abi.encodeCall(ITenorCoupon.payCoupon, (couponId));
-        (bool ok, bytes memory ret) = address(this).delegatecall(
-            abi.encodeCall(ITenorCouponSchedule.scheduleCouponSelfCall, (couponId, gasLimit, payload))
-        );
+        (bool ok, bytes memory ret) = address(this)
+            .delegatecall(abi.encodeCall(ITenorCouponSchedule.scheduleCouponSelfCall, (couponId, gasLimit, payload)));
         if (!ok) _bubbleRevert(couponId, ret);
         if (ret.length != 32) revert CouponScheduleDispatchFailed(couponId);
     }
@@ -321,9 +332,13 @@ library TenorCouponLib {
         address scheduleAddress = HSSAdapterLib.scheduleOf(jobId);
         if (scheduleAddress == address(0)) revert ITenorCoupon.CouponNotScheduled(couponId);
 
+        // The nonce bump is unconditional and the delete is best-effort, in that order. If the booked
+        // call has already fired — a scheduled `payCoupon` that reverted, for instance — the delete
+        // cannot succeed, and reverting here would leave the coupon permanently un-re-schedulable.
+        // See {TenorHSS}.
         ++coupon.scheduleNonce;
-        HSSAdapterLib.deleteSchedule(scheduleAddress);
-        emit ITenorCoupon.CouponScheduleCancelled(couponId, scheduleAddress);
+        int64 code = TenorHSS.tryDeleteSchedule(scheduleAddress);
+        emit ITenorCoupon.CouponScheduleCancelled(couponId, scheduleAddress, code);
     }
 
     /// @notice Returns funding left over after settlement to `to`. Caller must hold ISSUER_ROLE.
@@ -418,12 +433,10 @@ library TenorCouponLib {
     /// @param holders The coupon register.
     /// @param entitlements Per-holder entitlement, index-aligned with `holders`.
     /// @return totalPaid The sum actually delivered.
-    function _payHolders(
-        uint256 couponId,
-        address usdc,
-        address[] memory holders,
-        uint256[] memory entitlements
-    ) private returns (uint256 totalPaid) {
+    function _payHolders(uint256 couponId, address usdc, address[] memory holders, uint256[] memory entitlements)
+        private
+        returns (uint256 totalPaid)
+    {
         for (uint256 i; i < holders.length; ++i) {
             uint256 entitlement = entitlements[i];
             if (entitlement == 0) continue;
