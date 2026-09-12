@@ -8,3 +8,5 @@ contracts/broadcast/
 .DS_Store
 apps/web/.next/
 apps/web/node_modules/
+deployments/
+!deployments/296/ats.json

@@ -171,7 +171,25 @@ Consequences to honour:
 4. `scheduleSelfCall` makes the **diamond** the schedule payer, so the diamond must hold HBAR for the
    coupon payment to fire.
 
-### 3.2 G1 / G2 gate status — UNRESOLVED, no recorded testnet evidence
+### 3.2 G2 gate — **PASSES.** HIP-1215 is live on Hedera testnet (verified 2026-09-12)
+
+```console
+$ cast chain-id --rpc-url https://testnet.hashio.io/api
+296
+$ cast call 0x000000000000000000000000000000000000016b \
+    "hasScheduleCapacity(uint256,uint256)(bool)" 1789217920 200000 \
+    --rpc-url https://testnet.hashio.io/api
+true
+```
+
+So the Schedule Service answers at `0x16b`, the HIP-1215 `hasScheduleCapacity` signature is the
+`(uint256, uint256)` one Lattice vendored, and there is capacity ~10 minutes out at a 200k gas limit.
+The **primary** coupon path (`scheduleSelfCall`) is viable and SPEC §10's SDK scheduling fallback is
+not needed for the capacity check. What remains unverified is the end-to-end fire: that a scheduled
+`payCoupon` actually executes at expiry with the diamond as sender. That needs a funded testnet
+operator and is the real G2 exit criterion.
+
+### 3.3 G1 gate status — unresolved, needs a funded operator
 
 `contracts/lib/lattice/script/config/hedera/ProbeHedera.s.sol` is a day-0 probe that exercises
 HIP-906 `transferFrom`, the `delegatableContractId` key rule, and (probe 6) `scheduleSelfCall` ~60s
@@ -250,3 +268,39 @@ forge-std/=lib/lattice/lib/forge-std/src/
 `git submodule add` does **not** recurse. A fresh clone needs
 `git submodule update --init --recursive` (or `--recursive` on clone) or `diamond-lib` and
 `forge-std` are empty directories and nothing resolves. CI must use `submodules: recursive`.
+
+---
+
+## 7. ATS system deployment — SPEC §11.1.1 is out of date (no Hardhat needed)
+
+SPEC §11.1.1 calls the ATS system deploy "the only Hardhat step in the project". That is **wrong for
+the published 8.0.0 package**, which ships its deploy tooling already compiled under
+`node_modules/@hashgraph/asset-tokenization-contracts/build/scripts/`:
+
+```
+build/scripts/cli/deploySystemWithNewBlr.js        # deploy Business Logic Resolver + full system
+build/scripts/cli/deploySystemWithExistingBlr.js   # reuse an existing BLR
+build/scripts/workflows/…                          # the same flows as importable functions
+build/scripts/infrastructure/{signer,config,networkConfig}.js
+```
+
+Its runtime dependencies are `ethers ^6.15.0`, `zod`, `dotenv`, `tslib`, `@onchain-id/solidity` —
+**no hardhat, and no peer dependencies**. `infrastructure/signer.js` builds a plain
+`ethers.Wallet`/`JsonRpcProvider` from network config, so the whole system can be deployed with Bun +
+ethers straight out of `node_modules`. No repo clone, no Hardhat install, no `npm run deploy:hardhat`.
+
+`hedera-testnet` is a first-class known network (`infrastructure/networkConfig.js`
+`KNOWN_NETWORKS.HEDERA_TESTNET`), with per-network confirmation/retry tuning already set for it.
+
+Environment variables the tooling reads (note the prefixed, indexed shape — these are **not** the
+generic `PRIVATE_KEY` / `RPC_URL` names):
+
+```
+HEDERA_TESTNET_JSON_RPC_ENDPOINT
+HEDERA_TESTNET_MIRROR_NODE_ENDPOINT
+HEDERA_TESTNET_PRIVATE_KEY_0
+```
+
+Consequence for the delivery plan: M1 does not concentrate as much deadline risk as SPEC §11 assumes.
+`scripts/deploy-ats.ts` can call `deploySystemWithNewBlr` directly, and the `deployTokenWithExistingBlr`
+path means the bond issuance can reuse whatever BLR that produces.

@@ -4,5 +4,8 @@
   "type": "module",
   "dependencies": {
     "@hashgraph/asset-tokenization-contracts": "8.0.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
   }
 }
