@@ -1,0 +1,4 @@
+[submodule "contracts/lib/lattice"]
+	path = contracts/lib/lattice
+	url = https://github.com/dadadave80/lattice.git
+	branch = feat/hedera-system-contract-modules

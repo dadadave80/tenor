@@ -1,0 +1,8 @@
+{
+  "name": "tenor",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@hashgraph/asset-tokenization-contracts": "8.0.0"
+  }
+}

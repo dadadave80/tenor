@@ -1,0 +1,6 @@
+@lattice/=lib/lattice/src/
+@lattice-test/=lib/lattice/test/
+@diamond/=lib/lattice/lib/diamond-lib/src/
+diamond-lib/=lib/lattice/lib/diamond-lib/
+forge-std/=lib/lattice/lib/forge-std/src/
+@ats/=../node_modules/@hashgraph/asset-tokenization-contracts/contracts/

@@ -1,0 +1,10 @@
+node_modules/
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+.env
+.env.*
+!.env.example
+.DS_Store
+apps/web/.next/
+apps/web/node_modules/
