@@ -33,8 +33,12 @@ export default function HoldingsPage() {
   const now = BigInt(Math.floor(Date.now() / 1000))
   const reserved = mine.filter((l) => l.active && l.expiry > now).reduce((a, l) => a + l.remaining, 0n)
 
-  // The balance already counts held tokens, so what is free to list is balance minus reservations.
-  const available = r.tokens > reserved ? r.tokens - reserved : 0n
+  // `balanceOf` EXCLUDES held tokens -- an ATS hold moves them out of the partition balance, it does
+  // not flag them in place. Verified on testnet: an account that had delivered 30 of 990 with 20
+  // still reserved read 940, not 960. So the balance is already the sellable figure, and subtracting
+  // the reservation again understated it by exactly the amount reserved.
+  const available = r.tokens
+  const total = r.tokens + reserved
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -54,10 +58,11 @@ export default function HoldingsPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
         <Card>
-          <div style={{ fontSize: 12, color: 'var(--text-2)' }}>TGN27 balance</div>
+          <div style={{ fontSize: 12, color: 'var(--text-2)' }}>TGN27 owned</div>
           <div style={{ fontSize: 26, fontWeight: 500 }}>
-            {addresses.token ? Number(formatUnits(r.tokens, 6)).toLocaleString('en-US') : '—'}
+            {addresses.token ? Number(formatUnits(total, 6)).toLocaleString('en-US') : '—'}
           </div>
+          <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 4 }}>free plus reserved</div>
         </Card>
         <Card>
           <div style={{ fontSize: 12, color: 'var(--text-2)' }}>Reserved by your listings</div>
@@ -122,8 +127,8 @@ export default function HoldingsPage() {
 
       <p style={{ margin: 0, fontSize: 12, color: 'var(--text-2)', display: 'flex', alignItems: 'center', gap: 8 }}>
         <Icon name="shield" size={12} />
-        Listed tokens never leave your account. They are held on the bond, and released to you if you cancel or the
-        listing expires.
+        Listing does not transfer your tokens — it places a hold on the bond, which reserves them out of your
+        sellable balance. Cancelling or letting the listing expire releases them back to you.
       </p>
 
       <SellDrawer open={selling} onClose={() => setSelling(false)} available={available} />

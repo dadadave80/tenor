@@ -18,7 +18,8 @@
     "deploy:tenor": "bun --env-file=contracts/.env scripts/deploy-tenor.ts",
     "integration": "bun --env-file=contracts/.env scripts/integration.ts",
     "gen:abi": "bun scripts/gen-abi.ts",
-    "sync:env": "bun scripts/sync-env.ts"
+    "sync:env": "bun scripts/sync-env.ts",
+    "verify:tenor": "bun --env-file=contracts/.env scripts/verify-tenor.ts"
   },
   "workspaces": [
     "apps/*"
