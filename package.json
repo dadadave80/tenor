@@ -17,7 +17,8 @@
     "grant:kyc": "bun --env-file=contracts/.env scripts/grant-kyc.ts",
     "deploy:tenor": "bun --env-file=contracts/.env scripts/deploy-tenor.ts",
     "integration": "bun --env-file=contracts/.env scripts/integration.ts",
-    "gen:abi": "bun scripts/gen-abi.ts"
+    "gen:abi": "bun scripts/gen-abi.ts",
+    "sync:env": "bun scripts/sync-env.ts"
   },
   "workspaces": [
     "apps/*"
