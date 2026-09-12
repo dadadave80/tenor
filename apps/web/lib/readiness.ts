@@ -78,8 +78,9 @@ export function useReadiness(): Readiness {
 
   const { data: bal } = useBalance({ address, query: { enabled: Boolean(address) } })
 
-  // One multicall rather than eleven round trips: the drawer re-reads these on every keystroke
-  // through the amount field, and eleven requests per keystroke is how a relay starts rate-limiting.
+  // One multicall rather than nine round trips: the drawer re-reads these on every keystroke through
+  // the amount field. This is only actually one request because `chain.contracts.multicall3` is set
+  // — wagmi falls back to a read per contract without it, and says nothing when it does.
   const { data, isLoading, isError } = useReadContracts({
     allowFailure: true,
     contracts: [

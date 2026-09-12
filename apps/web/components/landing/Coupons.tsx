@@ -38,6 +38,12 @@ export function Coupons() {
   // The canvas printed a sample schedule id (`0.0.5123388`) and linked to an empty transaction hash.
   // SPEC §9.3 forbids both on this page, so the real booked schedule is read from the diamond and
   // the line simply omits the id when there is nothing to show.
+  //
+  // A SETTLED coupon's schedule is not something to show either. Its booking has already been
+  // consumed — coupon 1's fired, failed `INVALID_PAYER_SIGNATURE` and paid nobody (GROUND-TRUTH
+  // §10) — so attaching it to a running countdown would present a dead entity as the one about to
+  // execute, and attaching it to the "Paid" beat would credit it with a payment `payCoupon` made.
+  // Only a coupon still waiting for its pay date has a schedule worth naming.
   const [schedule, setSchedule] = useState<string | null>(null)
   useEffect(() => {
     const tenor = addresses.tenor
@@ -46,13 +52,11 @@ export function Coupons() {
     ;(async () => {
       for (const id of [1n, 2n, 3n]) {
         try {
-          const addr = (await client.readContract({
-            address: tenor,
-            abi: tenorAbi,
-            functionName: 'couponScheduleAddress',
-            args: [id],
-          })) as string
-          if (addr && addr !== ZERO) {
+          const [addr, coupon] = (await Promise.all([
+            client.readContract({ address: tenor, abi: tenorAbi, functionName: 'couponScheduleAddress', args: [id] }),
+            client.readContract({ address: tenor, abi: tenorAbi, functionName: 'getCoupon', args: [id] }),
+          ])) as [string, { settled: boolean }]
+          if (addr && addr !== ZERO && !coupon.settled) {
             if (alive) setSchedule(addr)
             return
           }
@@ -195,7 +199,7 @@ export function Coupons() {
           {paid ? (
             <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <Icon name="check" size={14} color="var(--accent)" />
-              Paid by the network
+              Paid to every registered holder
               {schedule && (
                 <a
                   href={hashscan('account', schedule)}

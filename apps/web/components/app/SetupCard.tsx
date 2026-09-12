@@ -69,9 +69,16 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
           setNote(json.error ?? 'The faucet refused.')
           return
         }
-        const hash = json.hash ?? json.usdc ?? json.kyc
-        if (hash) track(title, hash as `0x${string}`)
-        else setNote('Already done — nothing to send.')
+        // Stage 'fund' can send TWO transactions -- the USDC transfer and the KYC grant -- so each
+        // gets its own tray entry under its own name. Taking the first would silently hide a
+        // transaction the user paid nothing for but should still be able to open on HashScan.
+        const sent = ([
+          [title, json.hash],
+          ['Demo USDC', json.usdc],
+          ['Verification', json.kyc],
+        ] as const).filter(([, h]) => h)
+        if (sent.length === 0) setNote('Already done — nothing to send.')
+        else for (const [label, h] of sent) track(label, h as `0x${string}`)
       } catch (e) {
         fail(title, e)
       } finally {

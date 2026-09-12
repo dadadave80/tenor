@@ -12,6 +12,16 @@ export const hederaTestnet = defineChain({
   nativeCurrency: { name: 'HBAR', symbol: 'HBAR', decimals: 18 },
   rpcUrls: { default: { http: ['https://testnet.hashio.io/api'] } },
   blockExplorers: { default: { name: 'HashScan', url: 'https://hashscan.io/testnet' } },
+  contracts: {
+    /**
+     * Multicall3 sits at its canonical address on Hedera testnet, but viem's chain list does not
+     * carry it — and `useReadContracts` responds to that by silently falling back to one request per
+     * call. Nine requests per keystroke through the fill drawer is how a relay starts rate-limiting,
+     * so this is not a micro-optimisation. Verified against the live relay: all nine readiness
+     * reads, both HTS facade reads included, answer in a single round trip.
+     */
+    multicall3: { address: '0xcA11bde05977b3631167028862bE2a173976CA11' },
+  },
   testnet: true,
 })
 
