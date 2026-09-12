@@ -13,7 +13,7 @@
  *
  * Usage:  bun run gen:abi
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dir, '..')
@@ -116,3 +116,24 @@ console.log(`wrote apps/web/lib/abi.ts`)
 console.log(`  tenorAbi     ${count(tenor, 'function')} fns · ${count(tenor, 'event')} events · ${count(tenor, 'error')} errors`)
 console.log(`  atsTokenAbi  ${count(atsToken, 'function')} fns · ${count(atsToken, 'error')} errors`)
 console.log(`  htsAbi       ${count(hts, 'function')} fns`)
+
+// --- the Hedera response codes, parsed from Lattice's vendored copy of the canonical file ---------
+// `TenorHTSCallFailed(bytes4,int64)` carries an int64 status code, and the client turns it into a
+// sentence. These numbers are NOT guessable — 165 is a frozen account and 225 is an NFT serial — so
+// they are read from the source and keyed by name, which makes a typo a type error in `errors.ts`
+// rather than a wrong sentence under the exact compliance beat the demo turns on.
+const RESPONSE_CODES_SOL = resolve(ROOT, 'contracts/lib/lattice/src/interfaces/external/hedera/HederaResponseCodes.sol')
+if (!existsSync(RESPONSE_CODES_SOL)) {
+  throw new Error(`missing ${RESPONSE_CODES_SOL} — run \`git submodule update --init --recursive\``)
+}
+const codes: Record<string, number> = {}
+for (const m of readFileSync(RESPONSE_CODES_SOL, 'utf8').matchAll(/constant\s+([A-Z][A-Z0-9_]*)\s*=\s*(\d+)\s*;/g)) {
+  codes[m[1]] = Number(m[2])
+}
+if (Object.keys(codes).length < 30) throw new Error(`parsed only ${Object.keys(codes).length} response codes — check the regex against HederaResponseCodes.sol`)
+
+appendFileSync(
+  TARGET,
+  `\n/** Hedera response codes by name, parsed from \`HederaResponseCodes.sol\`. */\nexport const responseCodes = ${JSON.stringify(codes, null, 2)} as const\n`,
+)
+console.log(`  responseCodes ${Object.keys(codes).length} codes`)

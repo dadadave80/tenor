@@ -1,5 +1,5 @@
 import { BaseError, ContractFunctionRevertedError, decodeErrorResult, type Abi } from 'viem'
-import { atsTokenAbi, tenorAbi } from './abi'
+import { atsTokenAbi, responseCodes, tenorAbi } from './abi'
 
 /**
  * Turns a revert into something a person can act on.
@@ -39,17 +39,31 @@ export type DecodedError = {
 }
 
 /** Hedera response codes that reach the UI through `TenorHTSCallFailed(selector, code)`. */
-const RESPONSE_CODES: Record<number, Omit<DecodedError, 'raw'>> = {
-  21: { label: 'Network call failed', message: 'The Hedera Token Service did not complete the transfer.', action: 'Try again in a moment.' },
-  184: { label: 'Enable USDC first', message: 'This account is not associated with USDC, so it cannot send or receive it.', action: 'Use “Enable USDC” in the setup card.' },
-  194: { label: 'USDC already enabled', message: 'This account is already associated with USDC.' },
-  198: { label: 'Insufficient USDC', message: 'The account does not hold enough USDC.', action: 'Get demo USDC from the setup card.' },
-  225: { label: 'Account frozen', message: 'The issuer has frozen this account for USDC.', action: 'Contact the issuer.', issuerOnly: true },
-  226: { label: 'Verification required', message: 'This account has not been granted KYC for USDC.', action: 'The issuer must verify you.', issuerOnly: true },
-  265: { label: 'Trading paused', message: 'USDC transfers are paused.', issuerOnly: true },
-  292: { label: 'Approve USDC', message: 'The market has no USDC allowance from this account.', action: 'Approve USDC, then buy.' },
-  293: { label: 'Approve more USDC', message: 'The approved USDC amount is less than this purchase costs.', action: 'Raise the approval.' },
+/**
+ * User-facing copy for the Hedera status codes `TenorHTSCallFailed(bytes4,int64)` can carry.
+ *
+ * Keyed by the CONSTANT NAME, not the number: the numbers are generated from
+ * `HederaResponseCodes.sol` into `responseCodes`, so a name that does not exist there is a type
+ * error here. Written by hand the first time, three of nine numbers were wrong — including both
+ * beats the compliance demo turns on (frozen is 165, not 225; KYC is 176, not 226).
+ */
+const RESPONSE_CODE_COPY: { [K in keyof typeof responseCodes]?: Omit<DecodedError, 'raw'> } = {
+  UNKNOWN: { label: 'Network call failed', message: 'The Hedera Token Service did not complete the transfer.', action: 'Try again in a moment.' },
+  INSUFFICIENT_PAYER_BALANCE: { label: 'Not enough HBAR', message: 'This account cannot cover the transaction fee.', action: 'Get testnet HBAR from the setup card.' },
+  ACCOUNT_FROZEN_FOR_TOKEN: { label: 'Account frozen', message: 'The issuer has frozen this account for USDC.', action: 'Contact the issuer.', issuerOnly: true },
+  ACCOUNT_KYC_NOT_GRANTED_FOR_TOKEN: { label: 'Verification required', message: 'This account has not been granted KYC for USDC.', action: 'The issuer must verify you.', issuerOnly: true },
+  INSUFFICIENT_TOKEN_BALANCE: { label: 'Insufficient USDC', message: 'The account does not hold enough USDC.', action: 'Get demo USDC from the setup card.' },
+  TOKEN_NOT_ASSOCIATED_TO_ACCOUNT: { label: 'Enable USDC first', message: 'This account is not associated with USDC, so it cannot send or receive it.', action: 'Use \u201cEnable USDC\u201d in the setup card.' },
+  TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT: { label: 'USDC already enabled', message: 'This account is already associated with USDC.' },
+  TOKEN_IS_PAUSED: { label: 'Trading paused', message: 'USDC transfers are paused.', issuerOnly: true },
+  SPENDER_DOES_NOT_HAVE_ALLOWANCE: { label: 'Approve USDC', message: 'The market has no USDC allowance from this account.', action: 'Approve USDC, then buy.' },
+  AMOUNT_EXCEEDS_ALLOWANCE: { label: 'Approve more USDC', message: 'The approved USDC amount is less than this purchase costs.', action: 'Raise the approval.' },
 }
+
+/** The same copy indexed by the number that actually arrives on the wire. */
+const RESPONSE_CODES: Record<number, Omit<DecodedError, 'raw'>> = Object.fromEntries(
+  Object.entries(RESPONSE_CODE_COPY).map(([name, copy]) => [responseCodes[name as keyof typeof responseCodes], copy]),
+)
 
 /** Error name → copy. Ordered by the flow the user is in, not alphabetically. */
 const BY_NAME: Record<string, Omit<DecodedError, 'raw'>> = {

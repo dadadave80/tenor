@@ -14,6 +14,7 @@
     "create:usdc": "bun --env-file=contracts/.env scripts/create-usdc.ts",
     "issue:bond": "bun --env-file=contracts/.env scripts/issue-bond.ts",
     "grant:kyc": "bun --env-file=contracts/.env scripts/grant-kyc.ts",
+    "deploy:tenor": "cd contracts && forge script script/DeployTenor.s.sol:DeployTenor --rpc-url hedera-testnet --broadcast --slow --verify --verifier sourcify --verifier-url https://server-verify.hashscan.io",
     "integration": "bun --env-file=contracts/.env scripts/integration.ts",
     "gen:abi": "bun scripts/gen-abi.ts"
   },
