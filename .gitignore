@@ -19,3 +19,6 @@ deployments/296/*
 apps/web/.next/
 apps/web/AGENTS.md
 apps/web/CLAUDE.md
+
+# TypeScript incremental build cache
+*.tsbuildinfo

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { formatUnits } from 'viem'
 import { useWriteContract } from 'wagmi'
 import { Icon, type IconName } from '@/components/landing/primitives'
@@ -37,6 +37,49 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
   const { track, fail } = useActivity()
   const { writeContractAsync } = useWriteContract()
   const [busy, setBusy] = useState<string | null>(null)
+  const [faucet, setFaucet] = useState<boolean | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+
+  // Whether the faucet is configured at all decides between offering a button and explaining why
+  // there isn't one. Guessing wrong in either direction wastes the visitor's time.
+  useEffect(() => {
+    fetch('/api/faucet')
+      .then((r) => r.json())
+      .then((j) => setFaucet(Boolean(j.configured)))
+      .catch(() => setFaucet(false))
+  }, [])
+
+  /**
+   * The faucet is two calls with a user-signed transaction between them: an HTS transfer to an
+   * account that has not associated with the token fails, and only the account itself can associate.
+   */
+  const drip = useCallback(
+    async (stage: 'hbar' | 'fund', key: string, title: string) => {
+      if (!r.address) return
+      setBusy(key)
+      setNote(null)
+      try {
+        const res = await fetch('/api/faucet', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ address: r.address, stage }),
+        })
+        const json = (await res.json()) as { ok: boolean; error?: string; hash?: string; usdc?: string; kyc?: string }
+        if (!json.ok) {
+          setNote(json.error ?? 'The faucet refused.')
+          return
+        }
+        const hash = json.hash ?? json.usdc ?? json.kyc
+        if (hash) track(title, hash as `0x${string}`)
+        else setNote('Already done — nothing to send.')
+      } catch (e) {
+        fail(title, e)
+      } finally {
+        setBusy(null)
+      }
+    },
+    [r.address, track, fail],
+  )
 
   const send = async (key: string, title: string, run: () => Promise<`0x${string}`>) => {
     setBusy(key)
@@ -75,7 +118,9 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
       done: r.hbar > 0n,
       detail: r.hbar > 0n ? `${Number(formatUnits(r.hbar, 18)).toFixed(2)} HBAR available` : 'Needed for transaction fees',
       icon: r.hbar > 0n ? 'check' : 'clock',
-      link: r.hbar > 0n ? undefined : { href: 'https://portal.hedera.com/faucet', label: 'Hedera faucet' },
+      action:
+        r.hbar > 0n || !faucet ? undefined : { label: 'Get test HBAR', onClick: () => drip('hbar', 'hbar', 'Get test HBAR') },
+      link: r.hbar > 0n || faucet ? undefined : { href: 'https://portal.hedera.com/faucet', label: 'Hedera faucet' },
     },
     {
       key: 'usdc',
@@ -91,9 +136,14 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
       done: r.usdc > 0n,
       detail: r.usdc > 0n ? fmtUsdc(r.usdc) : 'For buying on testnet',
       icon: r.usdc > 0n ? 'check' : 'clock',
-      // Deliberately a link, not a button: the drip is an issuer transfer, not something this
-      // account can do for itself.
-      link: r.usdc > 0n ? undefined : { href: '#faucet', label: 'Ask the issuer for demo USDC' },
+      action:
+        r.usdc > 0n || !faucet
+          ? undefined
+          : {
+              label: r.usdcAssociated ? 'Get demo USDC' : 'Enable USDC first',
+              onClick: () => drip('fund', 'balance', 'Get demo USDC'),
+              disabled: !r.usdcAssociated,
+            },
     },
     {
       key: 'verified',
@@ -101,9 +151,13 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
       done: r.verified,
       detail: r.verified
         ? 'Verified by the issuer'
-        : 'The issuer verifies investors. You can browse listings now, and buy once verified.',
+        : faucet
+          ? 'Only the issuer can verify an investor. On testnet the demo issuer does it with the same button as the USDC drip.'
+          : 'The issuer verifies investors. You can browse listings now, and buy once verified.',
       icon: r.verified ? 'check' : 'clock',
-      pill: r.verified ? undefined : 'Pending',
+      // Still no button of its own: KYC is granted by the issuer, and the drip above is the issuer
+      // acting. Offering the user a "verify me" button would imply an authority they do not have.
+      pill: r.verified ? undefined : 'Issuer',
     },
   ]
 
@@ -202,6 +256,17 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
           </li>
         ))}
       </ol>
+
+      {note && (
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--warning)' }}>{note}</p>
+      )}
+
+      {faucet === false && (
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-2)' }}>
+          The demo faucet is not configured in this build, so HBAR, USDC and verification have to come
+          from the issuer directly.
+        </p>
+      )}
 
       {!addresses.tenor && (
         <p style={{ margin: 0, fontSize: 12, color: 'var(--text-2)' }}>
