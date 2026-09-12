@@ -11,9 +11,10 @@
  *
  * Usage:  bun run deploy:tenor
  */
-import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import { Contract } from 'ethers'
 import { operator, requireRecord, scan, writeRecord } from './lib/ats'
+import { startRelayShim } from './lib/relay-shim'
 
 const CONTRACTS = resolve(import.meta.dir, '../contracts')
 
@@ -30,7 +31,7 @@ const HBAR_SEED = 20n * 10n ** 18n
 const { usdc, token } = requireRecord(['usdc', 'token'])
 // `operator()` also guards the genesis hash, which is what stops a record left over from a local
 // rehearsal being deployed against.
-const { address: admin } = await operator({ minHbar: 100 })
+const { address: admin, signer, provider } = await operator({ minHbar: 100 })
 
 // forge has no env var for the signing key, so it goes in argv. That makes it visible in this
 // machine's process list for the length of the deploy; acceptable only because this is a disposable
@@ -44,35 +45,56 @@ const privateKey = rawKey.startsWith('0x') ? rawKey : `0x${rawKey}`
 const rpc = process.env.HEDERA_TESTNET_RPC ?? ''
 const local = /127\.0\.0\.1|localhost/.test(rpc)
 
+// forge cannot talk to Hashio directly: it pins its nonce lookup to a block hash using EIP-1898's
+// object form, which the relay rejects outright. See `lib/relay-shim.ts`. Anvil accepts the object
+// form, so a local rehearsal talks to the node directly.
+const shim = local ? null : startRelayShim(rpc || 'https://testnet.hashio.io/api')
+if (shim) console.log(`relay shim on ${shim.url} -> ${rpc}  (rewrites EIP-1898 block params)`)
+
 // `admin` must be the broadcaster: `associateToken` is sent as the diamond admin immediately after
 // assembly, and the init delegatecall cannot grant the role to the factory's caller.
 const args = [
   'script',
   'script/DeployTenor.s.sol:DeployTenor',
   '--sig',
-  'run(address,address,address,address,uint16,uint64,uint256)',
+  'run(address,address,address,address,uint16,uint64)',
   admin,
   admin,
   usdc,
   token,
   String(FEE_BPS),
   String(MAX_DURATION),
-  HBAR_SEED.toString(),
   '--rpc-url',
-  'hedera-testnet',
+  shim ? shim.url : 'hedera-testnet',
   '--private-key',
   privateKey,
   '--broadcast',
   // Hedera's relay rejects the burst a default broadcast sends; --slow waits for each receipt.
   '--slow',
+  // Required, not an optimisation. forge simulates the whole script with `eth_call` first, and
+  // Hedera's `eth_call` does not execute state-changing HTS precompile calls: the post-deploy
+  // `associateToken` comes back `HTSCallFailed(0x49146bde, 21)` -- response code 21, UNKNOWN -- and
+  // forge abandons the run before broadcasting anything. The association works in a real
+  // transaction; it is only unsimulatable. The deploy is covered by 165 local tests and a full
+  // rehearsal against anvil instead.
+  '--skip-simulation',
   ...(local ? [] : ['--verify', '--verifier', 'sourcify', '--verifier-url', 'https://server-verify.hashscan.io']),
 ]
 
 console.log(`\nforge ${args.map((a) => (a === privateKey ? '<key>' : a)).join(' ')}\n`)
 if (local) console.log('local chain — skipping Sourcify verification\n')
-const forge = spawnSync('forge', args, { cwd: CONTRACTS, stdio: ['inherit', 'pipe', 'inherit'], encoding: 'utf8' })
-const out = forge.stdout ?? ''
+// Spawned ASYNCHRONOUSLY, not with spawnSync: the shim is an HTTP server in this same process, and
+// a synchronous spawn blocks the event loop for the whole deploy — so every request forge makes to
+// the shim times out and forge reports it cannot reach the chain.
+const proc = Bun.spawn(['forge', ...args], { cwd: CONTRACTS, stdout: 'pipe', stderr: 'inherit' })
+const out = await new Response(proc.stdout).text()
+const status = await proc.exited
 process.stdout.write(out)
+if (shim) {
+  console.log(`\nrelay shim rewrote ${shim.rewrites()} request(s)`)
+  shim.stop()
+}
+const forge = { status }
 
 // Order matters here. `forge script --verify` exits NON-ZERO when any contract fails to verify --
 // which happens after the broadcast has already succeeded. Throwing on the exit code first would
@@ -101,6 +123,39 @@ if (!tenor) {
 
 writeRecord({ tenor })
 
+// --- the two post-deploy steps forge cannot do -------------------------------------------------
+// `associateToken` reaches the Hedera Token Service at `0x167`, which has no EVM bytecode for forge
+// to execute, so both of these are sent here as ordinary transactions. See DeployTenor.s.sol.
+const htsAdapter = new Contract(
+  tenor,
+  ['function associateToken(address token) external', 'function isAssociated(address token) view returns (bool)'],
+  signer,
+)
+
+if (await htsAdapter.isAssociated(usdc)) {
+  console.log(`\nalready associated with ${usdc}`)
+} else {
+  console.log(`\nassociating the diamond with USDC ...`)
+  // The relay's estimate for a `0x167` call is unreliable and an under-estimate fails with
+  // INSUFFICIENT_GAS, so the limit is explicit.
+  const tx = await htsAdapter.associateToken(usdc, { gasLimit: 1_000_000 })
+  await tx.wait()
+  console.log(`  ✓ associateToken                     ${tx.hash}`)
+  if (!(await htsAdapter.isAssociated(usdc))) {
+    throw new Error('associateToken was mined but isAssociated is still false — check HashScan.')
+  }
+}
+
+const seeded = await provider.getBalance(tenor)
+if (seeded >= HBAR_SEED) {
+  console.log(`diamond already holds ${Number(seeded) / 1e18} HBAR`)
+} else {
+  console.log('seeding the diamond with HBAR for its scheduled calls ...')
+  const tx = await signer.sendTransaction({ to: tenor, value: HBAR_SEED - seeded })
+  await tx.wait()
+  console.log(`  ✓ HBAR seed                          ${tx.hash}`)
+}
+
 if (forge.status !== 0) {
   console.warn(
     `\n⚠ The deploy succeeded and is recorded, but forge exited ${forge.status} — almost certainly ` +
@@ -115,4 +170,5 @@ console.log(`              ${scan('contract', tenor)}`)
 console.log(`  usdc        ${usdc}`)
 console.log(`  security    ${token}`)
 console.log(`  fee         ${FEE_BPS} bps · max listing ${MAX_DURATION / 86400} days`)
+console.log(`  hbar        ${Number(await provider.getBalance(tenor)) / 1e18} HBAR held for scheduled calls`)
 console.log(`\nnext:  bun run sync:env  →  bun run integration`)

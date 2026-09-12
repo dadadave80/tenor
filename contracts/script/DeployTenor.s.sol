@@ -8,7 +8,6 @@ import {BaseDeploy} from "@lattice-script/base/BaseDeploy.s.sol";
 import {Receive} from "@lattice/Receive.sol";
 import {AccessControl} from "@lattice/access/AccessControl.sol";
 import {AccessControlDiamondCut} from "@lattice/governance/AccessControlDiamondCut.sol";
-import {IHTSAdapter} from "@lattice/interfaces/tokens/IHTSAdapter.sol";
 import {HSSAdapter} from "@lattice/oracles/hedera/HSSAdapter.sol";
 import {Pausable} from "@lattice/security/Pausable.sol";
 import {HTSAdapter} from "@lattice/tokens/hedera/HTSAdapter.sol";
@@ -70,39 +69,35 @@ contract DeployTenor is BaseDeploy {
         );
     }
 
-    /// @notice Deploys the Tenor diamond and completes the two post-deploy transactions.
-    /// @dev Broadcasting entrypoint for `forge script ... --broadcast`. The caller must hold `admin` to send
-    ///      the association, so `admin` should be the broadcasting key on testnet.
-    /// @param admin The diamond admin (must be the broadcaster for the association to succeed).
+    /// @notice Deploys and initializes the Tenor diamond. Assembly only.
+    /// @dev Broadcasting entrypoint for `forge script ... --broadcast`.
+    ///
+    ///      The two post-deploy steps -- `associateToken(usdc)` and the HBAR seed -- are deliberately
+    ///      NOT here. `associateToken` calls the Hedera Token Service at `0x167`, and `0x167` has no
+    ///      EVM bytecode: it is a native system contract the consensus node implements, not code
+    ///      forge can fetch from a fork. So forge's local EVM returns nothing for the call and the
+    ///      script aborts with `HTSCallFailed(0x49146bde, 21)` -- response code 21, UNKNOWN -- before
+    ///      broadcasting anything. `--skip-simulation` does not help, because the script body itself
+    ///      runs in forge's EVM either way. This is also exactly why the tests etch a mock at
+    ///      `0x167` rather than expecting a real precompile.
+    ///
+    ///      `scripts/deploy-tenor.ts` sends both follow-ups as ordinary transactions afterwards,
+    ///      signed by `admin`, where the real system contract is reachable.
+    /// @param admin The diamond admin. Must also be whoever sends the association afterwards.
     /// @param issuer The coupon issuer.
     /// @param usdc The HTS settlement token.
     /// @param token The ATS security token.
     /// @param feeBps Initial protocol fee, <= 100.
     /// @param maxDuration Initial listing lifetime cap, in seconds.
-    /// @param hbarSeed Wei of HBAR (18 dp on the EVM side) to transfer to the diamond for scheduled calls.
     /// @return tenor The deployed Tenor diamond address.
-    function run(
-        address admin,
-        address issuer,
-        address usdc,
-        address token,
-        uint16 feeBps,
-        uint64 maxDuration,
-        uint256 hbarSeed
-    ) external returns (address tenor) {
+    function run(address admin, address issuer, address usdc, address token, uint16 feeBps, uint64 maxDuration)
+        external
+        returns (address tenor)
+    {
         vm.startBroadcast();
         (FacetCut[] memory cuts, address init, bytes memory initCalldata) =
             buildCuts(admin, issuer, usdc, token, feeBps, maxDuration);
         tenor = _assemble(cuts, init, initCalldata);
-
-        // Post-deploy 1: the diamond associates itself with USDC, as `admin`.
-        IHTSAdapter(tenor).associateToken(usdc);
-
-        // Post-deploy 2: fund the diamond so it can pay for the coupon calls it schedules.
-        if (hbarSeed != 0) {
-            (bool ok,) = tenor.call{value: hbarSeed}("");
-            require(ok, "DeployTenor: HBAR seed transfer failed (is the Receive facet cut in?)");
-        }
         vm.stopBroadcast();
     }
 }
