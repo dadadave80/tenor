@@ -10,7 +10,22 @@ import { useEffect, useRef, useState } from 'react'
  * `Tenor Landing.dc.html`. See `docs/design/README.md`.
  */
 
-export type IconName = 'check' | 'clock' | 'alert' | 'pause' | 'snow' | 'play' | 'info'
+export type IconName =
+  | 'check'
+  | 'clock'
+  | 'alert'
+  | 'pause'
+  | 'snow'
+  | 'play'
+  | 'info'
+  // Added for the app shell. Paths are the canvas's own (`Tenor v2.dc.html`, `icon()`).
+  | 'x'
+  | 'sun'
+  | 'moon'
+  | 'trend'
+  | 'wallet'
+  | 'cal'
+  | 'shield'
 
 const PATHS: Record<IconName, string> = {
   check: 'M20 6 9 17l-5-5',
@@ -20,10 +35,18 @@ const PATHS: Record<IconName, string> = {
   snow: 'M12 2v20M2 12h20M5 5l14 14M19 5 5 19',
   play: 'M8 5v14l11-7z',
   info: 'M12 8v4M12 16h.01',
+  x: 'M18 6 6 18M6 6l12 12',
+  sun: 'M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4',
+  moon: 'M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z',
+  trend: 'M22 7 13.5 15.5 8.5 10.5 2 17M16 7h6v6',
+  wallet: 'M21 12V7H5a2 2 0 0 1 0-4h14v4M3 5v14a2 2 0 0 0 2 2h16v-5M18 12a2 2 0 0 0 0 4h4v-4Z',
+  cal: 'M16 2v4M8 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+  shield:
+    'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1zm-11-1 2 2 4-4',
 }
 
 /** Icons that are drawn inside a ring. */
-const RINGED = new Set<IconName>(['clock', 'alert', 'info'])
+const RINGED = new Set<IconName>(['clock', 'alert', 'info', 'sun'])
 
 export function Icon({
   name,

@@ -1,12 +1,13 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { maxUint256 } from 'viem'
 import { useReadContract, useSimulateContract, useWriteContract } from 'wagmi'
 import { tenorAbi } from './abi'
 import { addresses, ASSOCIATE_GAS_LIMIT } from './chain'
 import { resolve } from './errors'
 import { erc20Abi, hrc719Abi, useReadiness, type Readiness } from './readiness'
+import { useActivity } from '@/components/app/activity'
 
 /**
  * The one state machine every action button in the app runs (SPEC §9.2).
@@ -41,6 +42,31 @@ export type ActionState = {
   issuerOnly?: boolean
   /** Gross cost and fee in USDC base units, once an amount is entered. */
   quote?: { cost: bigint; fee: bigint }
+}
+
+/**
+ * Wraps a write so it always reaches the activity tray.
+ *
+ * `writeContract` is fire-and-forget and never yields the hash, which means the tray cannot follow
+ * the transaction to a receipt -- and the receipt is the only thing that distinguishes "the relay
+ * accepted it" from "it succeeded at consensus". So every action here uses `writeContractAsync` and
+ * hands the hash straight to `track`, and a refusal in the wallet is recorded by `fail` rather than
+ * vanishing.
+ */
+function useSender() {
+  const { writeContractAsync } = useWriteContract()
+  const { track, fail } = useActivity()
+  return useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- one call shape per action site
+    async (title: string, request: any) => {
+      try {
+        track(title, await writeContractAsync(request))
+      } catch (e) {
+        fail(title, e)
+      }
+    },
+    [writeContractAsync, track, fail],
+  )
 }
 
 const blocked = (label: string, extra: Partial<ActionState> = {}): ActionState => ({
@@ -128,7 +154,8 @@ export type Listing = {
 export function useFillAction(id: bigint | undefined, listing: Listing | undefined, amount: bigint): ActionState {
   const r = useReadiness()
   const { tenor } = addresses
-  const { writeContract, isPending } = useWriteContract()
+  const send = useSender()
+  const { isPending } = useWriteContract()
 
   const { data: quoted } = useReadContract({
     address: tenor,
@@ -168,7 +195,7 @@ export function useFillAction(id: bigint | undefined, listing: Listing | undefin
       return ready(
         'Enable USDC',
         () =>
-          writeContract({
+          send('Enable USDC', {
             address: addresses.usdc!,
             abi: hrc719Abi,
             functionName: 'associate',
@@ -184,7 +211,7 @@ export function useFillAction(id: bigint | undefined, listing: Listing | undefin
       return ready(
         `Approve ${fmtUsdc(quote.cost)}`,
         () =>
-          writeContract({
+          send('Approve USDC', {
             address: addresses.usdc!,
             abi: erc20Abi,
             functionName: 'approve',
@@ -194,7 +221,7 @@ export function useFillAction(id: bigint | undefined, listing: Listing | undefin
       )
     }
     return null
-  }, [gate, quote, r, tenor, writeContract])
+  }, [gate, quote, r, tenor, send])
 
   // Only now is simulating worth a round trip — and only now would its revert be informative.
   const canSimulate = !gate && !fixup && id !== undefined && amount > 0n && Boolean(tenor)
@@ -223,7 +250,9 @@ export function useFillAction(id: bigint | undefined, listing: Listing | undefin
   if (!sim.data) return { ...blocked('Checking…'), quote }
 
   return {
-    ...ready(`Buy ${fmtTokens(amount, listing!.tokenDecimals)}`, () => writeContract(sim.data!.request)),
+    ...ready(`Buy ${fmtTokens(amount, listing!.tokenDecimals)}`, () =>
+      send(`Buy ${fmtTokens(amount, listing!.tokenDecimals)}`, sim.data!.request),
+    ),
     quote,
     pending: isPending,
     helper: quote ? `${fmtUsdc(quote.cost)} to the seller, settled in one transaction.` : undefined,
@@ -239,7 +268,8 @@ export function useFillAction(id: bigint | undefined, listing: Listing | undefin
 export function useListAction(amount: bigint, pricePerToken: bigint, expiry: bigint, unlimited = false): ActionState {
   const r = useReadiness()
   const { tenor, token, partition } = addresses
-  const { writeContract, isPending } = useWriteContract()
+  const send = useSender()
+  const { isPending } = useWriteContract()
 
   const { data: maxDuration } = useReadContract({
     address: tenor,
@@ -274,7 +304,7 @@ export function useListAction(amount: bigint, pricePerToken: bigint, expiry: big
       return ready(
         'Enable selling',
         () =>
-          writeContract({
+          send('Enable selling', {
             address: token,
             abi: erc20Abi,
             functionName: 'approve',
@@ -284,7 +314,7 @@ export function useListAction(amount: bigint, pricePerToken: bigint, expiry: big
       )
     }
     return null
-  }, [gate, token, tenor, r.tokenAllowance, amount, unlimited, writeContract])
+  }, [gate, token, tenor, r.tokenAllowance, amount, unlimited, send])
 
   const canSimulate = !gate && !fixup && Boolean(tenor && token)
   const sim = useSimulateContract({
@@ -306,7 +336,7 @@ export function useListAction(amount: bigint, pricePerToken: bigint, expiry: big
   if (!sim.data) return blocked('Checking…')
 
   return {
-    ...ready(`List ${fmtTokens(amount, 6)}`, () => writeContract(sim.data!.request)),
+    ...ready(`List ${fmtTokens(amount, 6)}`, () => send(`List ${fmtTokens(amount, 6)}`, sim.data!.request)),
     pending: isPending,
   }
 }
@@ -315,7 +345,8 @@ export function useListAction(amount: bigint, pricePerToken: bigint, expiry: big
 export function useCancelAction(id: bigint | undefined): ActionState {
   const r = useReadiness()
   const { tenor } = addresses
-  const { writeContract, isPending } = useWriteContract()
+  const send = useSender()
+  const { isPending } = useWriteContract()
 
   const sim = useSimulateContract({
     address: tenor,
@@ -333,7 +364,7 @@ export function useCancelAction(id: bigint | undefined): ActionState {
     return { ...blocked(d.label), helper: d.action ?? d.message, issuerOnly: d.issuerOnly }
   }
   if (!sim.data) return blocked('Cancel listing')
-  return { ...ready('Cancel listing', () => writeContract(sim.data!.request)), pending: isPending }
+  return { ...ready('Cancel listing', () => send('Cancel listing', sim.data!.request)), pending: isPending }
 }
 
 export { fmtUsdc, fmtTokens }

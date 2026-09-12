@@ -1,0 +1,241 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { useState } from 'react'
+import { usePrivy } from '@privy-io/react-auth'
+import { useAccount, useDisconnect } from 'wagmi'
+import { Icon, Identicon, Wordmark, useViewport } from '@/components/landing/primitives'
+import { hashscan } from '@/lib/chain'
+import { useActivity } from './activity'
+import { Pill, SecondaryButton, Spinner } from './ui'
+
+const ROUTES = [
+  { href: '/market', label: 'Market' },
+  { href: '/holdings', label: 'Holdings' },
+  { href: '/coupons', label: 'Coupons' },
+  { href: '/contracts', label: 'Contracts' },
+]
+
+function short(a: string): string {
+  return `${a.slice(0, 6)}…${a.slice(-4)}`
+}
+
+export function AppNav({ onTray }: { onTray: () => void }) {
+  const path = usePathname()
+  const { isMobile } = useViewport()
+  const { pending } = useActivity()
+  const { address, isConnected } = useAccount()
+  const { disconnect } = useDisconnect()
+  const { ready, authenticated, login, logout } = usePrivy()
+  const [menu, setMenu] = useState(false)
+
+  const signIn = () => {
+    // Privy owns the modal. `ready` is false until its iframe has loaded, and calling `login`
+    // before then is a no-op that looks to the user like a dead button.
+    if (ready) login()
+  }
+
+  const signOut = async () => {
+    setMenu(false)
+    disconnect()
+    if (authenticated) await logout()
+  }
+
+  return (
+    <header
+      style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+        background: 'color-mix(in srgb, var(--bg) 88%, transparent)',
+        backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid var(--border)',
+      }}
+    >
+      <nav
+        style={{
+          maxWidth: 1440,
+          margin: '0 auto',
+          padding: '0 clamp(16px, 4vw, 48px)',
+          height: 64,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 24,
+        }}
+      >
+        <Link href="/" style={{ color: 'var(--text)', display: 'flex', alignItems: 'center' }}>
+          <Wordmark height={22} fontSize={17} />
+        </Link>
+
+        {!isMobile && (
+          <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
+            {ROUTES.map((r) => {
+              const on = path === r.href
+              return (
+                <Link
+                  key={r.href}
+                  href={r.href}
+                  aria-current={on ? 'page' : undefined}
+                  style={{
+                    height: 34,
+                    padding: '0 14px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    borderRadius: 'var(--radius-pill)',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    color: on ? 'var(--text)' : 'var(--text-2)',
+                    background: on ? 'var(--surface-2)' : 'transparent',
+                  }}
+                >
+                  {r.label}
+                </Link>
+              )
+            })}
+          </div>
+        )}
+
+        <div style={{ flex: 1 }} />
+
+        <button
+          type="button"
+          onClick={onTray}
+          aria-label={pending ? `Activity, ${pending} pending` : 'Activity'}
+          className="pill-secondary"
+          style={{
+            height: 36,
+            padding: '0 12px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            borderRadius: 'var(--radius-pill)',
+            border: '1px solid var(--border)',
+            background: 'transparent',
+            color: 'var(--text)',
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: 'pointer',
+          }}
+        >
+          {pending > 0 ? <Spinner size={14} color="var(--warning)" /> : <Icon name="clock" size={14} />}
+          {!isMobile && 'Activity'}
+        </button>
+
+        {isConnected && address ? (
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setMenu((m) => !m)}
+              aria-expanded={menu}
+              aria-haspopup="menu"
+              className="pill-secondary"
+              style={{
+                height: 36,
+                padding: '0 12px 0 6px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                borderRadius: 'var(--radius-pill)',
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: 'var(--text)',
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: 'pointer',
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              <Identicon addr={address} size={24} />
+              {short(address)}
+            </button>
+            {menu && (
+              <div
+                role="menu"
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 44,
+                  minWidth: 220,
+                  padding: 8,
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-card)',
+                  boxShadow: 'var(--shadow)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                }}
+              >
+                {isMobile &&
+                  ROUTES.map((r) => (
+                    <Link
+                      key={r.href}
+                      href={r.href}
+                      onClick={() => setMenu(false)}
+                      style={{ padding: '8px 10px', borderRadius: 8, color: 'var(--text)', fontSize: 14 }}
+                    >
+                      {r.label}
+                    </Link>
+                  ))}
+                <a
+                  href={hashscan('account', address)}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setMenu(false)}
+                  style={{ padding: '8px 10px', borderRadius: 8, color: 'var(--text-2)', fontSize: 13 }}
+                >
+                  View on HashScan
+                </a>
+                <button
+                  type="button"
+                  onClick={signOut}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--danger)',
+                    fontSize: 13,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <SecondaryButton onClick={signIn} disabled={!ready}>
+            {ready ? 'Sign in' : 'Loading…'}
+          </SecondaryButton>
+        )}
+      </nav>
+    </header>
+  )
+}
+
+/** Shown above every page while the market is paused, because it changes what every button will do. */
+export function PausedBanner({ show }: { show: boolean }) {
+  if (!show) return null
+  return (
+    <div
+      role="status"
+      style={{
+        background: 'var(--warning-soft)',
+        color: 'var(--warning)',
+        borderBottom: '1px solid var(--border)',
+        padding: '10px clamp(16px, 4vw, 48px)',
+        fontSize: 13,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+      }}
+    >
+      <Icon name="pause" size={13} />
+      Trading is paused by the issuer. Listings stay reserved, and sellers can still cancel.
+      <Pill kind="warning">Paused</Pill>
+    </div>
+  )
+}
