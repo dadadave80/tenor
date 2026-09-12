@@ -326,3 +326,21 @@ cannot be filled after expiry regardless.
 
 **`quote` on an inactive listing succeeds.** It reverts only for an id that was never created, so a
 client can still price and display a historical fill. Only `fill` enforces liveness.
+
+**Schedule-nonce drift after a refused delete.** A consequence of the `cancelSchedule` fix in §3.1/§7,
+found by the coupon test suite and accepted rather than asserted away:
+
+1. book at nonce 0; 2. `cancelSchedule` whose delete the network refuses (nonce → 1, but the
+network's *schedule 0* survives); 3. re-book at nonce 1; 4. the stale schedule 0 fires.
+
+`payCoupon` clears the booking at the coupon's *current* nonce, so the stale fire settles the coupon
+and clears the **nonce-1** entry — the live booking — leaving schedule 1 orphaned:
+`couponScheduleAddress` reads zero and `cancelSchedule` can no longer reach it. The scheduled payload
+is pinned to `payCoupon(couponId)` for security (nothing else may ever be scheduled), so the firing
+call cannot tell the contract which nonce booked it.
+
+Consequence is bounded and there is a remedy: the coupon is settled, no funds are at risk, the orphan
+later fires into `CouponAlreadySettled`, and because Lattice's HSSAdapter facet is in the cut the
+issuer can delete the orphan directly with `deleteSchedule`. Only the diamond's HBAR for that one
+booking is wasted. Covered by `test_firedStaleSchedule_clearsTheCurrentBooking_documentsNonceDrift`
+and `test_orphanedBooking_remainsDeletableThroughTheHssAdapterFacet`.

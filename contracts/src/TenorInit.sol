@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
+import {ERC165Lib} from "@diamond/libraries/ERC165Lib.sol";
 import {AccessControlLib} from "@lattice/access/libraries/AccessControlLib.sol";
 import {HSSAdapterLib, HSS_SCHEDULER_ROLE} from "@lattice/oracles/hedera/HSSAdapterLib.sol";
 import {PausableLib} from "@lattice/security/libraries/PausableLib.sol";
@@ -46,6 +47,13 @@ contract TenorInit {
         AccessControlLib._grantRole(HTS_OPERATOR_ROLE, admin);
         AccessControlLib._grantRole(ISSUER_ROLE, issuer);
         AccessControlLib._grantRole(HSS_SCHEDULER_ROLE, issuer);
+
+        // ERC-165's OWN id (`0x01ffc9a7`). The diamond routes `supportsInterface` but nothing else in
+        // this init chain sets that flag: diamond-lib writes it from `ERC165Init`/`DiamondInit`, which
+        // Tenor does not cut, and `DiamondIntrospectionInit` registers only the loupe and cut ids. Without
+        // this line a client that probes ERC-165 support before trusting any other `supportsInterface`
+        // answer reads the diamond as non-introspectable — which is exactly what the Contracts page does.
+        ERC165Lib.registerInterface();
 
         PausableLib.__Pausable_init();
         HTSAdapterLib.__HTSAdapter_init();
