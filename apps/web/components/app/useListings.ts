@@ -28,8 +28,10 @@ export function useListings(): { rows: ListingRow[]; loading: boolean; nextId?: 
 
   const ids = useMemo(() => {
     const n = nextId ? Number(nextId) : 0
-    // Ids start at 1; `nextListingId` is the id the next `list` will take.
-    return Array.from({ length: Math.max(0, n - 1) }, (_, i) => BigInt(i + 1))
+    // Ids start at ZERO: `TenorMarketLib.list` assigns `id = $.nextId++`, so `nextListingId` is the
+    // COUNT of listings ever created and the first listing is id 0. Starting at 1 skipped the very
+    // first listing and stopped one short of the last -- an empty market with one listing in it.
+    return Array.from({ length: n }, (_, i) => BigInt(i))
   }, [nextId])
 
   const { data, isLoading } = useReadContracts({

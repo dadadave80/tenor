@@ -140,6 +140,29 @@ const BY_SUBSTRING: [RegExp, Omit<DecodedError, 'raw'>][] = [
   [/insufficient balance|InsufficientBalance/i, { label: 'Insufficient balance', message: 'The account does not hold enough of this bond.' }],
   [/insufficient funds/i, { label: 'Need test HBAR', message: 'This account has no HBAR to pay the network fee.', action: 'Use “Get test HBAR” in the setup card.' }],
   [/user rejected|denied transaction/i, { label: 'Cancelled', message: 'You dismissed the signing prompt.' }],
+  // Relay-level messages, observed against testnet rather than guessed. Hedera creates an account
+  // the first time it receives HBAR, so a brand-new key is not an account yet and the relay refuses
+  // to simulate for it at all -- which otherwise surfaces as the generic "would fail".
+  [
+    /sender account not found|payer account not found/i,
+    {
+      label: 'Account not activated',
+      message: 'Hedera creates an account the first time it receives HBAR, and this one has not yet.',
+      action: 'Use “Get test HBAR” in the setup card first.',
+    },
+  ],
+  [
+    /INSUFFICIENT_GAS|insufficient gas/i,
+    { label: 'Gas too low', message: 'The network needed more gas than was offered.', action: 'Try again.' },
+  ],
+  [
+    /CONTRACT_REVERT_EXECUTED/i,
+    { label: 'Transaction would fail', message: 'The contract refused this transaction.' },
+  ],
+  [
+    /rate limit|429|too many requests/i,
+    { label: 'Network busy', message: 'The Hedera JSON-RPC relay is rate limiting.', action: 'Wait a moment and retry.' },
+  ],
 ]
 
 const ABIS: Abi[] = [tenorAbi as unknown as Abi, atsTokenAbi as unknown as Abi]
