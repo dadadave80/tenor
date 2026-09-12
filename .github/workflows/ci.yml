@@ -50,6 +50,17 @@ jobs:
         working-directory: contracts
         run: forge test -vvv
 
+      # The client's ABIs are generated from these artifacts plus the ATS package. Running it here
+      # proves the generator still matches the contracts — a renamed error would otherwise only
+      # surface as a client that cannot decode a revert.
+      - name: Check generated ABIs are current
+        run: |
+          bun run gen:abi
+          git diff --exit-code -- apps/web/lib/abi.ts
+
+      - name: Web typecheck
+        run: bun run --filter web typecheck
+
   scripts:
     runs-on: ubuntu-latest
     steps:
