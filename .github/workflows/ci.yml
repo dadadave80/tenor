@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      # `submodules: recursive` is load-bearing. Lattice vendors diamond-lib and forge-std as its own
+      # submodules, and `git submodule add` does not recurse — without this they are empty
+      # directories and every @diamond/ and forge-std/ import fails to resolve.
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      # ATS is installed at the repo root and imported into Solidity through
+      # `allow_paths = ["../node_modules"]`, so the contracts do not compile without this.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Cache Foundry artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.foundry
+            contracts/out
+          key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/remappings.txt') }}-${{ hashFiles('contracts/src/**/*.sol', 'contracts/test/**/*.sol') }}
+          restore-keys: |
+            foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/remappings.txt') }}-
+            foundry-${{ runner.os }}-
+
+      - name: Format check
+        working-directory: contracts
+        run: forge fmt --check
+
+      - name: Build
+        working-directory: contracts
+        run: forge build
+
+      - name: Test
+        working-directory: contracts
+        run: forge test -vvv
+
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+
+      # The ATS deploy tooling and the Hedera SDK are reached through package export maps and CJS
+      # interop, where a wrong symbol name resolves fine and then fails at runtime. Bundling every
+      # script catches a bad import path without needing a funded testnet key.
+      - name: Check script imports resolve
+        run: |
+          for f in scripts/*.ts; do
+            echo "→ $f"
+            bun build --target=node "$f" --outfile /dev/null
+          done
