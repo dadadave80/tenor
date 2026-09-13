@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { formatUnits } from 'viem'
 import { useWriteContract } from 'wagmi'
 import { Icon, type IconName } from '@/components/landing/primitives'
-import { fmtUsdc } from '@/lib/actions'
+import { fmtUsdc, MIN_HBAR } from '@/lib/actions'
 import { addresses, ASSOCIATE_GAS_LIMIT, hashscan } from '@/lib/chain'
 import { hrc719Abi, useReadiness } from '@/lib/readiness'
 import { useActivity } from './activity'
@@ -111,6 +111,10 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
       }),
     )
 
+  // Ready means enough to send a transaction, the same bar the actions hold: a few cents of HBAR is not ready.
+  const hbarReady = r.hbar >= MIN_HBAR
+  const hbar = Number(formatUnits(r.hbar, 18)).toFixed(2)
+
   const rows: Row[] = [
     {
       key: 'wallet',
@@ -122,12 +126,16 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
     {
       key: 'hbar',
       label: 'Test HBAR',
-      done: r.hbar > 0n,
-      detail: r.hbar > 0n ? `${Number(formatUnits(r.hbar, 18)).toFixed(2)} HBAR available` : 'Needed for transaction fees',
-      icon: r.hbar > 0n ? 'check' : 'clock',
+      done: hbarReady,
+      detail: hbarReady
+        ? `${hbar} HBAR available`
+        : r.hbar > 0n
+          ? `${hbar} HBAR · each transaction needs ${formatUnits(MIN_HBAR, 18)} on hand`
+          : 'Needed for transaction fees',
+      icon: hbarReady ? 'check' : 'clock',
       action:
-        r.hbar > 0n || !faucet ? undefined : { label: 'Get test HBAR', onClick: () => drip('hbar', 'hbar', 'Get test HBAR') },
-      link: r.hbar > 0n || faucet ? undefined : { href: 'https://portal.hedera.com/faucet', label: 'Hedera faucet' },
+        hbarReady || !faucet ? undefined : { label: 'Get test HBAR', onClick: () => drip('hbar', 'hbar', 'Get test HBAR') },
+      link: hbarReady || faucet ? undefined : { href: 'https://portal.hedera.com/faucet', label: 'Hedera faucet' },
     },
     {
       key: 'usdc',
