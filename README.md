@@ -1,4 +1,17 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="Tenor — bonds that enforce their own rules" width="100%">
+</p>
+
 # Tenor
+
+[![CI](https://github.com/dadadave80/tenor/actions/workflows/ci.yml/badge.svg)](https://github.com/dadadave80/tenor/actions/workflows/ci.yml)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/dadadave80/tenor)
+[![License: MIT](https://img.shields.io/badge/license-MIT-F2F1E9)](LICENSE)
+[![Solidity 0.8.36](https://img.shields.io/badge/Solidity-0.8.36-363636?logo=solidity&logoColor=white)](contracts/foundry.toml)
+[![Built with Foundry](https://img.shields.io/badge/built%20with-Foundry-FFDB1C)](https://getfoundry.sh)
+[![Hedera testnet](https://img.shields.io/badge/Hedera-testnet%20296-000000?logo=hedera&logoColor=white)](#deployed-addresses-hedera-testnet-chain-296)
+[![Live app](https://img.shields.io/badge/live-tenor--markets.vercel.app-3DD68C)](https://tenor-markets.vercel.app)
+[![ETHOnline 2026](https://img.shields.io/badge/ETHGlobal-ETHOnline%202026-7C3AED)](https://ethglobal.com/events/ethonline2026)
 
 **A compliance-native secondary market for Hedera ATS security tokens.**
 
@@ -42,21 +55,58 @@ stranding everyone else's coupon.
 
 ## Architecture
 
+```mermaid
+flowchart LR
+  Issuer["Issuer<br/>ATS + scripts"]
+  Investor["Investors<br/>Privy embedded wallets · passkey login"]
+
+  subgraph Token["ATS security token · ERC-1400 / ERC-3643 diamond"]
+    Rules["Hold · KYC · ControlList · Pause · Freeze"]
+  end
+
+  subgraph Tenor["Tenor · EIP-2535 diamond · contract Tenor is Lattice"]
+    Market["TenorMarket<br/>list · fill · cancel"]
+    Coupon["TenorCoupon<br/>fund · schedule · payCoupon"]
+    Core["DiamondCut · Loupe · ERC165<br/>AccessControl · Pausable"]
+  end
+
+  HTS["Hedera Token Service<br/>0x167"]
+  HSS["Hedera Schedule Service<br/>0x16b"]
+  USDC["USDC · HTS token"]
+
+  Issuer -->|"issue · grant KYC · mint"| Rules
+  Issuer -->|"fund and schedule coupons"| Coupon
+  Investor -->|"enable selling · list · fill · cancel"| Market
+  Market <-->|"createHoldFrom / executeHold<br/>escrow = diamond"| Rules
+  Market -->|"transferFrom buyer → seller"| HTS
+  Coupon -->|"pay holders"| HTS
+  HTS --- USDC
+  Coupon -->|"scheduleSelfCall payCoupon"| HSS
+  HSS -.->|"fires at the pay date"| Coupon
 ```
-  Issuer (ATS + scripts)                       Investors (Privy embedded wallets, passkey login)
-        │ issue · grant KYC · mint · fund & schedule coupons    │ enable selling · list · approve · fill · cancel
-        ▼                                                        ▼
- ┌────────────────────────────────┐  createHoldFrom / executeHold  ┌────────────────────────────────────────┐
- │ ATS security token             │◄─────────────────────────────►│ Tenor  (EIP-2535, Tenor is Lattice)     │
- │ diamond · ERC-1400 / ERC-3643  │        escrow = diamond        │  DiamondCut · Loupe · ERC165 · Receive  │
- │ Hold · KYC · ControlList       │                                │  AccessControl · Pausable               │
- │ Pause · Freeze                 │                                │  TenorMarket · TenorCoupon              │
- └────────────────────────────────┘                                │  HTSAdapter ──► 0x167 Token Service     │
-                                                                   │  HSSAdapter ──► 0x16b Schedule Service  │
-                                                                   └────────────────────────────────────────┘
-                                                                          │ transferFrom(buyer→seller)     │ scheduleSelfCall(payCoupon)
-                                                                          ▼                                ▼
-                                                                    USDC (HTS token)              Fired by the network at expiry
+
+One transaction per fill. USDC moves first, then the token executes the hold, and the token, not
+Tenor, decides whether the transfer is allowed:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as Buyer · embedded wallet
+  participant T as Tenor diamond
+  participant U as USDC · HTS 0x167
+  participant S as ATS security token
+
+  B->>T: fill(id, amount)
+  T->>U: transferFrom(buyer → seller, cost)
+  T->>S: executeHoldByPartition(hold, buyer, amount)
+  S->>S: KYC both sides · control list · pause · freeze
+  alt the token allows it
+    S-->>T: tokens delivered to buyer
+    T-->>B: Filled
+  else the token refuses, e.g. InvalidKycStatus
+    S-->>T: revert
+    T-->>B: whole transaction reverts · USDC untouched
+  end
 ```
 
 The on-chain component is a single **EIP-2535 diamond composed from [Lattice](https://github.com/dadadave80/lattice)
@@ -239,4 +289,7 @@ committed under `docs/`.
 
 ## License
 
-MIT.
+MIT, see [LICENSE](LICENSE).
+
+Contributions: [CONTRIBUTING.md](CONTRIBUTING.md) · Security reports: [SECURITY.md](SECURITY.md) ·
+Community: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)

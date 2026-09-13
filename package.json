@@ -1,6 +1,9 @@
 {
   "name": "tenor",
   "private": true,
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/dadadave80/tenor.git" },
+  "homepage": "https://tenor-markets.vercel.app",
   "type": "module",
   "dependencies": {
     "@hashgraph/asset-tokenization-contracts": "8.0.0",
