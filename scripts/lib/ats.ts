@@ -88,6 +88,8 @@ export async function operator(opts: { minHbar?: number } = {}): Promise<{
   signer: Signer
   address: string
   provider: JsonRpcProvider
+  /** The JSON-RPC URL `provider` talks to, resolved once so callers never resolve it differently. */
+  rpc: string
 }> {
   const raw = process.env.PRIVATE_KEY ?? process.env.HEDERA_TESTNET_PRIVATE_KEY_0
   if (!raw) {
@@ -99,7 +101,8 @@ export async function operator(opts: { minHbar?: number } = {}): Promise<{
   // portal.hedera.com shows the key without the 0x prefix; ethers requires it.
   const pk = raw.startsWith('0x') ? raw : `0x${raw}`
 
-  const rpc = process.env.HEDERA_TESTNET_RPC ?? process.env.HEDERA_TESTNET_JSON_RPC_ENDPOINT ?? DEFAULT_RPC
+  // `||`, not `??`: an empty variable in an .env file means unset, not "connect to the empty string".
+  const rpc = process.env.HEDERA_TESTNET_RPC || process.env.HEDERA_TESTNET_JSON_RPC_ENDPOINT || DEFAULT_RPC
 
   // ATS's tooling reads these prefixed names internally for its own config validation, so mirror
   // whatever we resolved into them before any ATS import runs its module-level config parse.
@@ -154,7 +157,7 @@ export async function operator(opts: { minHbar?: number } = {}): Promise<{
         `Top it up before continuing rather than failing part-way through.`,
     )
   }
-  return { signer, address, provider }
+  return { signer, address, provider, rpc }
 }
 
 /** `hashscan` link for anything with an id or address. */

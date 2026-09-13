@@ -11,20 +11,25 @@ import {AccessControlDiamondCut} from "@lattice/governance/AccessControlDiamondC
 import {HSSAdapter} from "@lattice/oracles/hedera/HSSAdapter.sol";
 import {Pausable} from "@lattice/security/Pausable.sol";
 import {HTSAdapter} from "@lattice/tokens/hedera/HTSAdapter.sol";
+import {Tenor} from "../src/Tenor.sol";
 import {TenorCoupon} from "../src/coupon/TenorCoupon.sol";
 import {TenorInit} from "../src/TenorInit.sol";
 import {TenorMarket} from "../src/market/TenorMarket.sol";
 
 /// @title DeployTenor
 /// @author David Dada <daveproxy80@gmail.com> (https://github.com/dadadave80)
-/// @notice Ready-to-deploy recipe for the Tenor diamond, following Lattice's {BaseDeploy} pattern: a public
-///         {buildCuts} that both production and the deployment test share, and a broadcasting {run}.
-/// @dev Two post-deploy transactions are part of deployment, not afterthoughts, and {run} sends both:
+/// @notice Ready-to-deploy recipe for the {Tenor} diamond, following Lattice's {BaseDeploy} pattern: a public
+///         {buildCuts} that both production and the deployment test share, and a broadcasting {run}. The
+///         broadcaster creates the diamond, which records it as owner, then initializes it as that owner
+///         ({Tenor-initialize} refuses anyone else). Never {BaseDeploy-_assemble}: its `LatticeFactory` can only
+///         create a `Lattice`.
+/// @dev Two post-deploy transactions are part of deployment, not afterthoughts; `scripts/deploy-tenor.ts` sends
+///      both right after {run}:
 ///
 ///      1. `associateToken(usdc)`. An HTS account must be associated with a token before it can receive it,
 ///         and the diamond receives USDC for coupon funding and fees. This cannot live in {TenorInit}:
-///         `HTSAdapterLib.associateToken` is gated on `HTS_MANAGER_ROLE` against `msg.sender`, and inside
-///         the init delegatecall `msg.sender` is the factory, not `admin`. See `docs/GROUND-TRUTH.md` §2.2.3.
+///         `HTSAdapterLib.associateToken` is gated on `HTS_MANAGER_ROLE` against `msg.sender`, and it calls
+///         `0x167`, which forge's EVM cannot execute (see {run}). See `docs/GROUND-TRUTH.md` §2.2.3.
 ///
 ///      2. Seeding the diamond with HBAR. `HSSAdapterLib.scheduleSelfCall` makes the CALLING CONTRACT the
 ///         schedule's payer, so the diamond funds the scheduled `payCoupon` out of its own balance. Without
@@ -97,7 +102,21 @@ contract DeployTenor is BaseDeploy {
         vm.startBroadcast();
         (FacetCut[] memory cuts, address init, bytes memory initCalldata) =
             buildCuts(admin, issuer, usdc, token, feeBps, maxDuration);
-        tenor = _assemble(cuts, init, initCalldata);
+        tenor = _assembleTenor(cuts, init, initCalldata);
         vm.stopBroadcast();
+    }
+
+    /// @notice Creates a {Tenor} owned by the caller, then initializes it as that owner.
+    /// @dev Two transactions when broadcast: the CREATE, then `initialize`. {Tenor-initialize} accepts only the
+    ///      account that sent the CREATE (the broadcaster in {run}, the calling contract in a test), so nobody
+    ///      can install a cut in between. Broadcast-free, like {BaseDeploy-_assemble}.
+    /// @return tenor The initialized diamond.
+    function _assembleTenor(FacetCut[] memory cuts, address init, bytes memory initCalldata)
+        internal
+        returns (address tenor)
+    {
+        Tenor diamond = new Tenor();
+        diamond.initialize(cuts, init, initCalldata);
+        tenor = address(diamond);
     }
 }

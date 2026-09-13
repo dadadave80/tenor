@@ -3,7 +3,6 @@ pragma solidity ^0.8.30;
 
 import {IHoldTypes} from "@ats/facets/hold/IHoldTypes.sol";
 import {FacetCut} from "@diamond/libraries/DiamondLib.sol";
-import {Lattice} from "@lattice/Lattice.sol";
 import {IAccessControl} from "@lattice/interfaces/access/IAccessControl.sol";
 import {HederaResponseCodes} from "@lattice/interfaces/external/hedera/HederaResponseCodes.sol";
 import {IHederaTokenService} from "@lattice/interfaces/external/hedera/IHederaTokenService.sol";
@@ -13,6 +12,7 @@ import {IHTSAdapter} from "@lattice/interfaces/tokens/IHTSAdapter.sol";
 import {DeployTenor} from "../script/DeployTenor.s.sol";
 import {ITenorMarket} from "../src/interfaces/ITenorMarket.sol";
 import {MARKET_MAX_FEE_BPS, MARKET_MAX_TOKEN_DECIMALS} from "../src/market/TenorMarketLib.sol";
+import {Tenor} from "../src/Tenor.sol";
 import {TenorHTS} from "../src/TenorHTS.sol";
 import {MockATSToken} from "./mocks/MockATSToken.sol";
 import {TenorTestBase} from "./TenorTestBase.sol";
@@ -238,9 +238,9 @@ contract TenorMarketTest is TenorTestBase {
         (FacetCut[] memory cuts, address init, bytes memory initCalldata) =
             deployer.buildCuts(admin, issuer, usdc, token, 0, MAX_DURATION);
 
-        Lattice d = new Lattice();
-        d.initialize(cuts, init, initCalldata);
-        venue = address(d);
+        Tenor v = new Tenor();
+        v.initialize(cuts, init, initCalldata);
+        venue = address(v);
 
         vm.prank(admin);
         IHTSAdapter(venue).associateToken(usdc);

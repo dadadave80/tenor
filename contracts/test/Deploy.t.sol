@@ -4,8 +4,7 @@ pragma solidity ^0.8.30;
 import {ERC165Facet} from "@diamond/facets/ERC165Facet.sol";
 import {IDiamondLoupe} from "@diamond/interfaces/IDiamondLoupe.sol";
 import {Facet, FacetCut, FunctionDoesNotExist} from "@diamond/libraries/DiamondLib.sol";
-import {Lattice} from "@lattice/Lattice.sol";
-import {LatticeFactory} from "@lattice/LatticeFactory.sol";
+import {OwnableLib} from "@diamond/libraries/OwnableLib.sol";
 import {IAccessControl} from "@lattice/interfaces/access/IAccessControl.sol";
 import {IERC8153} from "@lattice/interfaces/external/ercs/IERC8153.sol";
 import {IHSSAdapter} from "@lattice/interfaces/oracles/IHSSAdapter.sol";
@@ -18,23 +17,22 @@ import {DeployTenor} from "../script/DeployTenor.s.sol";
 import {ITenorCouponSchedule, ISSUER_ROLE} from "../src/coupon/TenorCouponLib.sol";
 import {ITenorCoupon} from "../src/interfaces/ITenorCoupon.sol";
 import {ITenorMarket} from "../src/interfaces/ITenorMarket.sol";
+import {Tenor} from "../src/Tenor.sol";
 import {TenorInit} from "../src/TenorInit.sol";
 import {TenorTestBase} from "./TenorTestBase.sol";
 
 /// @title DeployTenorHarness
-/// @notice Exposes {BaseDeploy}'s two internal deployment primitives so the production factory path can be
-///         driven from a test. Nothing is overridden — `assemble` and `latticeFactory` are the real
-///         `_assemble` / `_latticeFactory`, reached through an external frame so `address(this)` inside them
-///         is this harness, exactly as it is a script during `forge script`.
+/// @notice Exposes {DeployTenor-_assembleTenor}, the creation step {DeployTenor-run} broadcasts, so the
+///         production path can be driven from a test. Nothing is overridden; the external frame makes the
+///         harness the diamond's creator and therefore its owner, exactly as the broadcaster is during
+///         `forge script`.
 contract DeployTenorHarness is DeployTenor {
-    /// @notice Calls {BaseDeploy-_assemble}: deploy + initialize one diamond through {LatticeFactory}.
-    function assemble(FacetCut[] memory cuts, address init, bytes memory initCalldata) external returns (address) {
-        return _assemble(cuts, init, initCalldata);
-    }
-
-    /// @notice Calls {BaseDeploy-_latticeFactory}: the factory this harness assembles through on this chain.
-    function latticeFactory() external returns (LatticeFactory) {
-        return _latticeFactory();
+    /// @notice Calls {DeployTenor-_assembleTenor}: create a {Tenor}, then initialize it as its owner.
+    function assembleTenor(FacetCut[] memory cuts, address init, bytes memory initCalldata)
+        external
+        returns (address tenor)
+    {
+        return _assembleTenor(cuts, init, initCalldata);
     }
 }
 
@@ -44,18 +42,16 @@ contract DeployTenorHarness is DeployTenor {
 ///         INITIALISED correctly. Every other suite takes the diamond as a given; this one is the only place
 ///         the cut and `TenorInit` are checked against each other, and the only place the two post-deploy
 ///         transactions of `DeployTenor.run` are shown to be load-bearing rather than decorative.
-/// @dev Three deployment paths appear here on purpose, because they are three different risks:
-///      - {_assembleRaw} (`new Lattice()` + `initialize`) — the harness's path, used wherever a test needs to
+/// @dev Four deployment paths appear here on purpose, because they are different risks:
+///      - {_assembleRaw} (create a {Tenor}, then initialize it as its owner) — used wherever a test needs to
 ///        see a diamond BEFORE any post-deploy transaction has touched it.
-///      - {DeployTenorHarness-assemble} — the production `BaseDeploy._assemble` factory path, which is what
-///        testnet actually runs and which no other suite exercises.
+///      - {DeployTenorHarness-assembleTenor} — `DeployTenor._assembleTenor`, the exact function {DeployTenor-run}
+///        broadcasts.
+///      - `DeployTenor.run` itself, broadcast included, in {test_run_deploysAConfiguredTenorOwnedByTheBroadcaster}.
 ///      - The base's `tenor`, a fully deployed diamond including the USDC association.
 ///
-///      `DeployTenor.run` itself is deliberately NOT called: it opens its own `vm.startBroadcast()`, which
-///      makes `_assemble` read `LATTICE_SALT` / `LATTICE_FACTORY` from the environment. A developer's `.env`
-///      would then decide what this suite deploys, which is precisely what `TenorTestBase` refuses to allow.
-///      Its two post-deploy transactions are covered compositionally instead (see the ASSOCIATION and HBAR
-///      groups), so the only uncovered line is `run`'s own broadcast plumbing.
+///      `run`'s two post-deploy transactions belong to `scripts/deploy-tenor.ts`, not forge; they are covered
+///      compositionally (see the ASSOCIATION and HBAR groups).
 contract DeployTest is TenorTestBase {
     /// @dev `type(IERC165).interfaceId`.
     bytes4 internal constant ERC165_ID = 0x01ffc9a7;
@@ -298,7 +294,7 @@ contract DeployTest is TenorTestBase {
         (FacetCut[] memory cuts, address init, bytes memory data) =
             deployer.buildCuts(admin, issuer, usdc, address(atsToken), 25, 3 days);
 
-        Lattice diamond = new Lattice();
+        Tenor diamond = new Tenor();
         vm.expectEmit(address(diamond));
         emit ITenorMarket.FeeUpdated(25);
         vm.expectEmit(address(diamond));
@@ -314,12 +310,12 @@ contract DeployTest is TenorTestBase {
         (FacetCut[] memory cuts, address init, bytes memory data) =
             deployer.buildCuts(admin, issuer, usdc, address(atsToken), 101, MAX_DURATION);
 
-        Lattice diamond = new Lattice();
+        Tenor diamond = new Tenor();
         vm.expectRevert(abi.encodeWithSelector(ITenorMarket.FeeTooHigh.selector, uint16(101)));
         diamond.initialize(cuts, init, data);
     }
 
-    /// @notice Initialisation is ONE-SHOT. `Lattice.initialize` is first-caller-wins, so a second run — which
+    /// @notice Initialisation is ONE-SHOT. `Tenor.initialize` is first-caller-wins, so a second run — which
     ///         would re-grant roles and re-point the security token on a live venue — must be impossible for
     ///         anyone, the original deployer included.
     function testRevert_init_cannotBeRunTwiceThroughTheDiamond() public {
@@ -328,7 +324,7 @@ contract DeployTest is TenorTestBase {
             deployer.buildCuts(admin, issuer, usdc, address(atsToken), FEE_BPS, MAX_DURATION);
 
         vm.expectRevert(InvalidInitialization.selector);
-        Lattice(payable(tenor)).initialize(cuts, init, data);
+        Tenor(payable(tenor)).initialize(cuts, init, data);
     }
 
     /// @notice The other half of one-shot: `TenorInit.init` is not a facet. Its selector is deliberately absent
@@ -490,65 +486,92 @@ contract DeployTest is TenorTestBase {
     }
 
     //*//////////////////////////////////////////////////////////////////////////
-    //                             THE FACTORY PATH
+    //                         OWNER-GATED CREATION PATH
     //////////////////////////////////////////////////////////////////////////*//
 
-    /// @notice §8 — production deploys through `BaseDeploy._assemble`, which creates and initialises the proxy
-    ///         in ONE transaction (`Lattice.initialize` is first-caller-wins, so a two-transaction deploy could
-    ///         be hijacked in between). No other suite exercises that path; this asserts the diamond it
-    ///         produces is the same diamond, configured and role-seeded, and that the factory's own
-    ///         mandatory-loupe-coverage check accepts the Tenor recipe.
-    function test_factory_assembleProducesAWorkingDiamond() public {
+    /// @notice §8 — production deploys through `DeployTenor._assembleTenor`: create a {Tenor}, which records its
+    ///         creator as owner, then initialize it as that owner. This asserts the diamond it produces is a
+    ///         configured, role-seeded `Tenor` owned by the account that created it.
+    function test_assemble_producesAWorkingTenorOwnedByItsCreator() public {
         DeployTenorHarness harness = new DeployTenorHarness();
-        address diamond = _assembleThroughFactory(harness);
+        address diamond = _assembleThroughScript(harness);
 
-        assertEq(ITenorMarket(diamond).securityToken(), address(atsToken), "securityToken through the factory path");
-        assertEq(ITenorMarket(diamond).usdc(), usdc, "usdc through the factory path");
-        assertTrue(IAccessControl(diamond).hasRole(bytes32(0), admin), "admin role through the factory path");
-        assertTrue(IAccessControl(diamond).hasRole(ISSUER_ROLE, issuer), "issuer role through the factory path");
-        assertEq(IDiamondLoupe(diamond).facetAddresses().length, EXPECTED_FACETS, "ten facets via the factory");
+        assertEq(diamond.code, type(Tenor).runtimeCode, "the script must deploy Tenor");
+        assertEq(_ownerOf(diamond), address(harness), "the creator must be the owner");
+        assertEq(ITenorMarket(diamond).securityToken(), address(atsToken), "securityToken through the script path");
+        assertEq(ITenorMarket(diamond).usdc(), usdc, "usdc through the script path");
+        assertTrue(IAccessControl(diamond).hasRole(bytes32(0), admin), "admin role through the script path");
+        assertTrue(IAccessControl(diamond).hasRole(ISSUER_ROLE, issuer), "issuer role through the script path");
+        assertEq(IDiamondLoupe(diamond).facetAddresses().length, EXPECTED_FACETS, "ten facets via the script path");
     }
 
-    /// @notice The deterministic-salt contract: `_assemble` deploys at the address `factory.predict` names, and
-    ///         it advances the salt per diamond within a run, so a multi-diamond script cannot collide with
-    ///         itself. Without the advance the second `_assemble` would take the factory's idempotent return
-    ///         and silently ignore its own cuts.
-    function test_factory_predictMatchesTheAssembledAddressAndAdvancesPerDiamond() public {
-        DeployTenorHarness harness = new DeployTenorHarness();
-        LatticeFactory factory = harness.latticeFactory();
+    /// @notice Creation is observable: the constructor announces its owner with ERC-173's
+    ///         `OwnershipTransferred(0, creator)` and records it in `OwnableLib`'s slot.
+    function test_owner_creationRecordsAndAnnouncesTheCreator() public {
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        vm.expectEmit(predicted);
+        emit OwnableLib.OwnershipTransferred(address(0), address(this));
+        Tenor diamond = new Tenor();
 
-        address first = _assembleThroughFactory(harness);
-        assertEq(first, factory.predict(address(harness), _runSalt(0)), "first diamond is not at the predicted salt");
-
-        address second = _assembleThroughFactory(harness);
-        assertTrue(second != first, "the second diamond reused the first address");
-        assertEq(second, factory.predict(address(harness), _runSalt(1)), "second diamond is not at salt index 1");
+        assertEq(address(diamond), predicted, "the diamond must be at the CREATE address");
+        assertEq(_ownerOf(address(diamond)), address(this), "the owner slot must hold the creator");
     }
 
-    /// @notice The predicted address is bound to the DEPLOYER, not to the salt alone. The proxy's initcode
-    ///         commits to nothing, so a bare salt would let anyone front-run a counterfactual Tenor address
-    ///         with cuts of their own; folding the sender in is what makes the address safe to publish ahead of
-    ///         the deploy.
-    function test_factory_predictIsBoundToTheDeployer() public {
-        DeployTenorHarness harness = new DeployTenorHarness();
-        LatticeFactory factory = harness.latticeFactory();
+    /// @notice The gap between the two deploy transactions is closed: between the CREATE and `initialize`, no
+    ///         other account — not even the admin or issuer the recipe is about to empower — can install a cut.
+    ///         The owner's own initialization still goes through afterwards.
+    function test_owner_aHijackBetweenCreationAndInitializationFails() public {
+        (FacetCut[] memory cuts, address init, bytes memory data) = _recipe();
+        Tenor diamond = new Tenor();
 
-        address mine = factory.predict(address(harness), _runSalt(0));
-        assertTrue(mine != factory.predict(address(this), _runSalt(0)), "the same salt must not collide across senders");
-        assertEq(_assembleThroughFactory(harness), mine, "the deploy must land on the deployer-bound address");
+        address[3] memory intruders = [bob, admin, issuer];
+        for (uint256 i; i < intruders.length; ++i) {
+            vm.prank(intruders[i]);
+            vm.expectRevert(OwnableLib.Unauthorized.selector);
+            diamond.initialize(cuts, init, data);
+        }
+
+        diamond.initialize(cuts, init, data);
+        assertEq(IDiamondLoupe(address(diamond)).facetAddresses().length, EXPECTED_FACETS, "the owner's cut applies");
+        assertTrue(IAccessControl(address(diamond)).hasRole(bytes32(0), admin), "the owner's recipe seeds the admin");
     }
 
-    /// @notice With no `LATTICE_FACTORY` configured — the case every test and every fresh chain is in —
-    ///         `_assemble` stands up its own `LatticeRegistry` + `LatticeFactory` pair once and reuses it. A
-    ///         fresh pair per diamond would move every predicted address.
-    function test_factory_createsARegistryFactoryPairWhenNoneIsConfigured() public {
-        DeployTenorHarness harness = new DeployTenorHarness();
+    /// @notice Any caller but the owner is refused.
+    function testFuzz_owner_nonOwnersCannotInitialize(address caller) public {
+        Tenor diamond = new Tenor();
+        vm.assume(caller != address(this));
 
-        LatticeFactory factory = harness.latticeFactory();
-        assertTrue(address(factory) != address(0), "no factory was created");
-        assertGt(address(factory).code.length, 0, "the factory has no code");
-        assertGt(address(factory.registry()).code.length, 0, "the factory's registry has no code");
-        assertEq(address(harness.latticeFactory()), address(factory), "the factory must be reused on this chain");
+        vm.prank(caller);
+        vm.expectRevert(OwnableLib.Unauthorized.selector);
+        diamond.initialize(new FacetCut[](0), address(0), "");
+    }
+
+    /// @notice The order `scripts/deploy-tenor.ts`'s post-deploy gate relies on: the owner check runs BEFORE Lattice's
+    ///         one-time `initializer` guard. On an initialized diamond a stranger is still refused as a stranger
+    ///         (`Unauthorized`); only the owner reaches the guard (`InvalidInitialization`).
+    function testRevert_owner_theOwnerCheckRunsBeforeTheInitializerGuard() public {
+        vm.prank(bob);
+        vm.expectRevert(OwnableLib.Unauthorized.selector);
+        Tenor(payable(tenor)).initialize(new FacetCut[](0), address(0), "");
+
+        vm.expectRevert(InvalidInitialization.selector);
+        Tenor(payable(tenor)).initialize(new FacetCut[](0), address(0), "");
+    }
+
+    /// @notice §8 — `DeployTenor.run` itself, end to end, including its `vm.startBroadcast()`. It reads no
+    ///         environment, so it runs here as written and must hand back a configured, role-seeded {Tenor} that
+    ///         is owned by the broadcaster, initialized, and not yet associated (association is
+    ///         `scripts/deploy-tenor.ts`'s job).
+    function test_run_deploysAConfiguredTenorOwnedByTheBroadcaster() public {
+        address diamond = new DeployTenor().run(admin, issuer, usdc, address(atsToken), FEE_BPS, MAX_DURATION);
+
+        assertEq(diamond.code, type(Tenor).runtimeCode, "run must deploy Tenor");
+        assertEq(_ownerOf(diamond), DEFAULT_SENDER, "the broadcaster must own the diamond");
+        assertEq(IDiamondLoupe(diamond).facetAddresses().length, EXPECTED_FACETS, "ten facets through run()");
+        assertEq(ITenorMarket(diamond).securityToken(), address(atsToken), "securityToken through run()");
+        assertTrue(IAccessControl(diamond).hasRole(bytes32(0), admin), "admin role through run()");
+        assertTrue(IAccessControl(diamond).hasRole(ISSUER_ROLE, issuer), "issuer role through run()");
+        assertFalse(IHTSAdapter(diamond).isAssociated(usdc), "association is deploy-tenor.ts's job, not run's");
     }
 
     //*//////////////////////////////////////////////////////////////////////////
@@ -562,9 +585,10 @@ contract DeployTest is TenorTestBase {
         assertTrue(hts.associated(tenor, usdc), "the diamond must end up associated with USDC");
     }
 
-    /// @notice [DEV-3], the reason `DeployTenor.run` sends a SECOND transaction. `TenorInit` cannot associate
+    /// @notice [DEV-3], the reason `deploy-tenor.ts` sends a SECOND transaction. `TenorInit` cannot associate
     ///         USDC itself: `HTSAdapterLib.associateToken` checks `HTS_MANAGER_ROLE` against `msg.sender`, and
-    ///         inside the init delegatecall that is the factory, not the `admin` granted a line earlier. This
+    ///         inside the init delegatecall that is whoever called `initialize` — here this test contract, not the
+    ///         `admin` granted a line earlier — and on Hedera it calls `0x167`, which forge cannot execute. This
     ///         proves the gap exists — a freshly initialised diamond is UNASSOCIATED — and that the post-deploy
     ///         admin transaction is what closes it.
     function test_association_initAloneDoesNotAssociateTheDiamond() public {
@@ -611,7 +635,7 @@ contract DeployTest is TenorTestBase {
         assertEq(tenor.balance, 3 ether, "the balance must accumulate");
     }
 
-    /// @notice The {Receive} facet is load-bearing, not decorative: `Lattice` itself declares no `receive()`,
+    /// @notice The {Receive} facet is load-bearing, not decorative: `Tenor` (like `Lattice`) declares no `receive()`,
     ///         so a diamond cut without that facet REJECTS the HBAR seed and the deploy script's second
     ///         post-deploy transaction would revert. This is the failure the recipe's `cuts[4]` prevents.
     function test_hbarSeed_withoutTheReceiveFacetTheTransferIsRejected() public {
@@ -640,10 +664,10 @@ contract DeployTest is TenorTestBase {
         return deployer.buildCuts(admin, issuer, usdc, address(atsToken), FEE_BPS, MAX_DURATION);
     }
 
-    /// @dev `new Lattice()` + `initialize`, the harness's deployment path. Used wherever a test must see a
+    /// @dev Create a {Tenor} as this test contract, its owner, then initialize it. Used wherever a test must see a
     ///      diamond BEFORE either post-deploy transaction has touched it.
     function _assembleRaw(FacetCut[] memory cuts, address init, bytes memory data) internal returns (address) {
-        Lattice diamond = new Lattice();
+        Tenor diamond = new Tenor();
         diamond.initialize(cuts, init, data);
         return address(diamond);
     }
@@ -676,17 +700,17 @@ contract DeployTest is TenorTestBase {
         diamond = _assembleRaw(trimmed, init, data);
     }
 
-    /// @dev One diamond through the real `BaseDeploy._assemble` factory path.
-    function _assembleThroughFactory(DeployTenorHarness harness) internal returns (address diamond) {
+    /// @dev One diamond through `DeployTenor._assembleTenor`, the path {DeployTenor-run} broadcasts; the harness
+    ///      creates it, so the harness owns it.
+    function _assembleThroughScript(DeployTenorHarness harness) internal returns (address diamond) {
         (FacetCut[] memory cuts, address init, bytes memory data) =
             harness.buildCuts(admin, issuer, usdc, address(atsToken), FEE_BPS, MAX_DURATION);
-        diamond = harness.assemble(cuts, init, data);
+        diamond = harness.assembleTenor(cuts, init, data);
     }
 
-    /// @dev The salt `_assemble` uses for diamond `index` of a run: `keccak256(abi.encode(LATTICE_SALT, index))`
-    ///      with the base salt zero, which is what a non-broadcasting run (i.e. any test) gets.
-    function _runSalt(uint256 index) internal pure returns (bytes32) {
-        return keccak256(abi.encode(bytes32(0), index));
+    /// @dev The owner `OwnableLib` recorded, read from its slot: the diamond deliberately exposes no `owner()`.
+    function _ownerOf(address diamond) internal view returns (address) {
+        return address(uint160(uint256(vm.load(diamond, OwnableLib._OWNER_SLOT))));
     }
 
     /// @dev Decodes a facet's ERC-8153 export blob into selectors, validating its shape on the way. Read from

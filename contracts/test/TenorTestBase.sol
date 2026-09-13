@@ -4,7 +4,6 @@ pragma solidity ^0.8.30;
 import {IHederaTokenService} from "@lattice/interfaces/external/hedera/IHederaTokenService.sol";
 import {IHTSAdapter} from "@lattice/interfaces/tokens/IHTSAdapter.sol";
 import {FacetCut} from "@diamond/libraries/DiamondLib.sol";
-import {Lattice} from "@lattice/Lattice.sol";
 import {MockHederaTokenService} from "@lattice-test/mocks/hedera/MockHederaTokenService.sol";
 import {Test} from "forge-std/Test.sol";
 import {DeployTenor} from "../script/DeployTenor.s.sol";
@@ -12,6 +11,7 @@ import {ITenorCoupon} from "../src/interfaces/ITenorCoupon.sol";
 import {ITenorMarket} from "../src/interfaces/ITenorMarket.sol";
 import {MockATSToken} from "./mocks/MockATSToken.sol";
 import {MockHederaScheduleService} from "./mocks/MockHederaScheduleService.sol";
+import {Tenor} from "../src/Tenor.sol";
 import {TenorHTS} from "../src/TenorHTS.sol";
 import {HSS_SYSTEM_CONTRACT} from "@lattice/oracles/hedera/HSSAdapterLib.sol";
 
@@ -102,21 +102,20 @@ abstract contract TenorTestBase is Test {
         // it unverified is a live check that no code path tries to move tokens through it.
     }
 
-    /// @dev Assembles the production recipe against a real {Lattice} diamond, exactly as Lattice's own
-    ///      facet tests do. Deliberately NOT through `LatticeFactory`: tests must not read the
-    ///      environment, or a developer's `.env` could change what they deploy. `Deploy.t.sol` covers
-    ///      the factory path separately.
+    /// @dev Assembles the production recipe the way production does: create a {Tenor}, which records this test
+    ///      contract as its owner, then initialize it as that owner. Nothing is read from the environment, so a
+    ///      developer's `.env` cannot change what tests deploy.
     function _deployTenor() internal returns (address diamond_) {
         DeployTenor deployer = new DeployTenor();
         (FacetCut[] memory cuts, address init, bytes memory initCalldata) =
             deployer.buildCuts(admin, issuer, usdc, address(atsToken), FEE_BPS, MAX_DURATION);
 
-        Lattice d = new Lattice();
+        Tenor d = new Tenor();
         d.initialize(cuts, init, initCalldata);
         diamond_ = address(d);
 
-        // `TenorInit` cannot associate USDC itself — inside the init delegatecall `msg.sender` is the
-        // deployer, not `admin`, and `associateToken` is HTS_MANAGER_ROLE-gated. Production does this
+        // `TenorInit` cannot associate USDC itself — inside the init delegatecall `msg.sender` is the owner
+        // (this contract), not `admin`, and `associateToken` is HTS_MANAGER_ROLE-gated. Production does this
         // as a post-deploy transaction; so does the harness.
         vm.prank(admin);
         IHTSAdapter(diamond_).associateToken(usdc);

@@ -1,5 +1,5 @@
 /**
- * The third pillar: a coupon that pays itself, booked with the Hedera Schedule Service.
+ * The third pillar: a coupon booked with the Hedera Schedule Service, fired by the network on its pay date.
  *
  * This is the most exotic path in the project and, until this script runs, the only one never
  * exercised against Hedera. G2 proved the diamond can ASK for capacity (`hasScheduleCapacity`
@@ -12,14 +12,18 @@
  *   2. `couponRequirement(amountPerToken)` — how much USDC the whole register is owed.
  *   3. approve the diamond for that, then `fundCoupon`.
  *   4. `scheduleCoupon` — the diamond is the schedule's payer, so it must hold HBAR.
- *   5. wait, and watch `settled` flip without anyone sending a transaction.
+ *   5. wait for the pay date and watch `settled`. On testnet the network fires the schedule on time but
+ *      rejects the diamond as its payer (`docs/GROUND-TRUTH.md` §10), so a coupon still unsettled after
+ *      the window gets the permissionless `payCoupon` call that completes it printed — or, with
+ *      `--pay-as-b`, sent from investor B, who holds no issuer role.
  *
- * Usage:  bun run coupon            # pay date ~8 minutes out, then watches
- *         bun run coupon -- 90      # ~90 seconds out
+ * Usage:  bun run coupon                   # pay date ~8 minutes out, then watches
+ *         bun run coupon -- 90             # ~90 seconds out
+ *         bun run coupon -- --pay-as-b     # if unsettled after the pay date, investor B sends payCoupon
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { Contract, JsonRpcProvider } from 'ethers'
+import { Contract, Wallet, id } from 'ethers'
 import { tenorAbi } from '../apps/web/lib/abi'
 import { operator, requireRecord, scan } from './lib/ats'
 
@@ -33,10 +37,18 @@ const PER_TOKEN = 1_500_000n
 const SCHEDULE_GAS = 2_000_000n
 const HTS_GAS = 1_000_000n
 
-const leadSeconds = Number(process.argv[2] ?? 480)
+const argv = process.argv.slice(2).filter((a) => a !== '--')
+const payAsB = argv.includes('--pay-as-b')
+const unknownFlags = argv.filter((a) => a.startsWith('--') && a !== '--pay-as-b')
+if (unknownFlags.length) throw new Error(`Unknown flag(s): ${unknownFlags.join(' ')}. The only flag is --pay-as-b.`)
+const leadArg = argv.find((a) => !a.startsWith('--'))
+const leadSeconds = Number(leadArg ?? 480)
+if (!Number.isFinite(leadSeconds) || leadSeconds <= 0) {
+  throw new Error(`The lead time must be a positive number of seconds, not ${leadArg}.`)
+}
 
 const { tenor, token, usdc } = requireRecord(['tenor', 'token', 'usdc'])
-const { signer, address: issuer, provider } = await operator({ minHbar: 20 })
+const { signer, address: issuer, provider, rpc } = await operator({ minHbar: 20 })
 
 const market = new Contract(tenor, tenorAbi as never, signer)
 const usdcC = new Contract(
@@ -54,7 +66,7 @@ const step = async (label: string, p: Promise<{ hash: string; wait: () => Promis
 }
 
 // --- 1. the register -----------------------------------------------------------------------------
-const investors = JSON.parse(readFileSync(INVESTORS, 'utf8')) as { B: { address: string } }
+const investors = JSON.parse(readFileSync(INVESTORS, 'utf8')) as { B: { address: string; privateKey: string } }
 const candidates = [issuer, investors.B.address]
 
 const already = ((await market.couponHolders()) as string[]).map((h) => h.toLowerCase())
@@ -89,6 +101,20 @@ const existing = await market.getCoupon(COUPON_ID)
 const booked = ((await market.couponScheduleAddress(COUPON_ID)) as string) !== ZERO
 const now = BigInt(Math.floor(Date.now() / 1000))
 const stale = existing.payAt > 0n && existing.payAt <= now
+
+// A settled coupon needs nothing: re-funding it reverts `CouponAlreadySettled`, and `cancelSchedule` would only
+// bump its nonce.
+if (existing.settled) {
+  console.log(`\ncoupon ${COUPON_ID} is already settled: ${Number(existing.paid) / 1e6} USDC paid. Nothing to do.`)
+  process.exit(0)
+}
+
+// A funded coupon past its pay date only needs the permissionless `payCoupon`. With --pay-as-b it is paid now,
+// rather than re-dated onto another schedule the network would reject (docs/GROUND-TRUTH.md §10.2).
+if (payAsB && stale && existing.funded > 0n) {
+  console.log(`\ncoupon ${COUPON_ID} is funded and past its pay date; --pay-as-b pays it now instead of re-dating it.`)
+  await payFromB((await market.couponScheduleAddress(COUPON_ID)) as string, (await usdcC.balanceOf(holders[0])) as bigint)
+}
 
 // A pay date in the past cannot be scheduled, and `fundCoupon` rejects it outright. Re-dating is
 // free: it computes `topUp = required - funded` and pulls only the shortfall, so a fully funded
@@ -133,27 +159,24 @@ if (scheduleAddress !== ZERO) {
 
   await step(`scheduleCoupon(${COUPON_ID})`, market.scheduleCoupon(COUPON_ID, SCHEDULE_GAS, { gasLimit: 2_000_000 }))
   scheduleAddress = (await market.couponScheduleAddress(COUPON_ID)) as string
-
-  // THE step that makes the difference between a booking and a payment.
-  //
-  // HIP-1215's `scheduleCall` makes the calling contract the schedule's PAYER, and
-  // `HSSAdapterLib.scheduleSelfCall` stops there. Being the payer is not the same as having signed:
-  // at expiry the network needs the payer's signature, finds none, and the scheduled transaction
-  // fails with `INVALID_PAYER_SIGNATURE` -- observed on testnet, schedule 0.0.10505907, which
-  // executed 12ms after its pay date and paid nobody. A contract signs with its contract key via
-  // HIP-755's `authorizeSchedule`, which Lattice exposes separately.
-  await step('authorizeSchedule (HIP-755)', market.authorizeSchedule(scheduleAddress, { gasLimit: 1_000_000 }))
+  // No `authorizeSchedule` (HIP-755) follows. `scheduleCall` already signs with the diamond's contract key, so
+  // a second signature reverts `HSSCallFailed(0xf0637961, 205)` NO_NEW_VALID_SIGNATURES, which used to abort
+  // this script before the watch loop. See docs/GROUND-TRUTH.md §10.2.
 }
 
 console.log(`\nschedule ${scheduleAddress}`)
 console.log(`         ${scan('account', scheduleAddress)}`)
+console.log(
+  'note: on testnet the network fires this on time but rejects the diamond as its payer (INVALID_PAYER_SIGNATURE); ' +
+    'payCoupon is permissionless — docs/GROUND-TRUTH.md §10',
+)
 
 // --- 5. wait for the network to do it ------------------------------------------------------------
 const before = (await usdcC.balanceOf(holders[0])) as bigint
 const waitFor = Number(payAt) * 1000 - Date.now()
 console.log(
   `\nwaiting for the network to fire it — ${Math.max(0, Math.round(waitFor / 1000))}s away. ` +
-    `Nothing below sends a transaction.`,
+    `Nothing below sends a transaction${payAsB ? ' until the window closes' : ''}.`,
 )
 
 const deadline = Date.now() + Math.max(waitFor, 0) + 4 * 60_000
@@ -174,13 +197,50 @@ while (Date.now() < deadline) {
   }
 }
 
+// --- 6. past the pay date and unsettled: payCoupon is permissionless ------------------------------
 console.log(`
-The schedule did not fire within the window.
+The schedule did not settle coupon ${COUPON_ID} within the window.
 
   schedule  ${scan('account', scheduleAddress)}
-  coupon    still unsettled
 
-That is a finding, not necessarily a failure: check the schedule on HashScan for whether it executed
-and reverted, or was never triggered. \`payCoupon(${COUPON_ID})\` can always be called directly — the
-schedule is an automation of a permissionless function, not the only way to reach it.`)
-process.exit(1)
+On testnet that is the known payer-signature failure (docs/GROUND-TRUTH.md §10.2). \`payCoupon\` is
+permissionless, so any funded account can settle it now:
+
+  to        ${tenor}
+  data      ${market.interface.encodeFunctionData('payCoupon', [COUPON_ID])}   payCoupon(${COUPON_ID})
+  gas       ${SCHEDULE_GAS}
+
+  cast send ${tenor} "payCoupon(uint256)" ${COUPON_ID} --gas-limit ${SCHEDULE_GAS} --rpc-url ${rpc} --private-key <any funded key>`)
+
+if (!payAsB) {
+  console.log('\nor rerun with --pay-as-b to send it from investor B.')
+  process.exit(1)
+}
+
+await payFromB(scheduleAddress, before)
+
+/** Sends the permissionless `payCoupon` from investor B, who holds no role on the diamond: the non-issuer evidence §10.3 records. */
+async function payFromB(schedule: string, holderBefore: bigint): Promise<never> {
+  const b = new Wallet(investors.B.privateKey, provider)
+  const marketAsB = new Contract(tenor, tenorAbi as never, b)
+  const bIsIssuer = (await market.hasRole(id('ISSUER_ROLE'), b.address)) as boolean
+  console.log(
+    `\ninvestor B ${b.address}  ISSUER_ROLE ${bIsIssuer}  balance ${Number(await provider.getBalance(b.address)) / 1e18} HBAR`,
+  )
+  // Simulated first, so a revert surfaces as a decoded error instead of a failed transaction B pays for.
+  await marketAsB.payCoupon.staticCall(COUPON_ID, { gasLimit: SCHEDULE_GAS })
+  const payTx = await step(`payCoupon(${COUPON_ID}) from investor B`, marketAsB.payCoupon(COUPON_ID, { gasLimit: SCHEDULE_GAS }))
+
+  const settled = await market.getCoupon(COUPON_ID)
+  if (!settled.settled) throw new Error(`payCoupon from investor B was mined (${payTx.hash}) but coupon ${COUPON_ID} is still unsettled.`)
+  const holderAfter = (await usdcC.balanceOf(holders[0])) as bigint
+  console.log(`\nCOUPON SETTLED BY A NON-ISSUER — investor B sent the permissionless payCoupon.`)
+  console.log(`  coupon      ${COUPON_ID}`)
+  console.log(`  total paid  ${Number(settled.paid) / 1e6} USDC across ${holders.length} holder(s)`)
+  console.log(`  holder[0]   ${Number(holderBefore) / 1e6} -> ${Number(holderAfter) / 1e6} USDC`)
+  console.log(`  sent by     ${b.address} (ISSUER_ROLE ${bIsIssuer})`)
+  console.log(`  payCoupon   ${scan('transaction', payTx.hash)}`)
+  if (schedule !== ZERO) console.log(`  schedule    ${scan('account', schedule)}  (whether it executed is on HashScan; not checked here)`)
+  console.log(`  diamond     ${scan('contract', tenor)}`)
+  process.exit(0)
+}
