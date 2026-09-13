@@ -189,7 +189,7 @@ export function useFillAction(id: bigint | undefined, listing: Listing | undefin
       return blocked(`Only ${fmtTokens(listing.remaining, listing.tokenDecimals)} available`)
     }
     if (r.hbar < MIN_HBAR) {
-      return blocked('Get test HBAR', { helper: 'You need a little HBAR to pay the network fee.' })
+      return blocked('Get test HBAR', { helper: 'You need HBAR for the network fee. Hedera’s faucet gives 100 free at portal.hedera.com/faucet.' })
     }
     const compliance = complianceGate(r)
     if (compliance) return compliance
@@ -302,7 +302,7 @@ export function useListAction(amount: bigint, pricePerToken: bigint, expiry: big
     if (amount > r.tokens) return blocked('More than you hold', { helper: 'Reduce the amount.' })
     if (pricePerToken <= 0n) return blocked('Enter a price')
     if (r.hbar < MIN_HBAR) {
-      return blocked('Get test HBAR', { helper: 'You need a little HBAR to pay the network fee.' })
+      return blocked('Get test HBAR', { helper: 'You need HBAR for the network fee. Hedera’s faucet gives 100 free at portal.hedera.com/faucet.' })
     }
     const compliance = complianceGate(r)
     if (compliance) return compliance

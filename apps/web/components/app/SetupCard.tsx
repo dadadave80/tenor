@@ -135,7 +135,8 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
       icon: hbarReady ? 'check' : 'clock',
       action:
         hbarReady || !faucet ? undefined : { label: 'Get test HBAR', onClick: () => drip('hbar', 'hbar', 'Get test HBAR') },
-      link: hbarReady || faucet ? undefined : { href: 'https://portal.hedera.com/faucet', label: 'Hedera faucet' },
+      // Hedera's own faucet gives 100 HBAR, twenty times our drip, so it is offered alongside ours rather than instead of it.
+      link: hbarReady ? undefined : { href: 'https://portal.hedera.com/faucet', label: 'Get 100 HBAR from Hedera’s faucet' },
     },
     {
       key: 'usdc',
