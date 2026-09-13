@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { maxUint256 } from 'viem'
 import { useReadContract, useSimulateContract, useWriteContract } from 'wagmi'
 import { tenorAbi } from './abi'
@@ -42,6 +42,8 @@ export type ActionState = {
   issuerOnly?: boolean
   /** Gross cost and fee in USDC base units, once an amount is entered. */
   quote?: { cost: bigint; fee: bigint }
+  /** The transactions this takes, in order, when there is more than one, so a second signature is expected. */
+  steps?: { label: string; done: boolean }[]
 }
 
 /**
@@ -60,17 +62,27 @@ export type ActionState = {
 function useSender() {
   const { writeContractAsync } = useWriteContract()
   const { track, fail } = useActivity()
-  return useCallback(
+  // Where the write is: waiting on the wallet, or sent and waiting on consensus and the refetch after it.
+  // The button follows this, so it never looks idle while a transaction is still out.
+  const [phase, setPhase] = useState<'sign' | 'settle' | null>(null)
+  const send = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- one call shape per action site
-    async (title: string, request: any) => {
+    async (title: string, request: any): Promise<`0x${string}` | undefined> => {
+      setPhase('sign')
       try {
-        track(title, await writeContractAsync({ ...request, gas: request.gas ?? WRITE_GAS_LIMIT }))
+        const hash = await writeContractAsync({ ...request, gas: request.gas ?? WRITE_GAS_LIMIT })
+        setPhase('settle')
+        return (await track(title, hash)) ? hash : undefined
       } catch (e) {
         fail(title, e)
+        return undefined
+      } finally {
+        setPhase(null)
       }
     },
     [writeContractAsync, track, fail],
   )
+  return { send, phase }
 }
 
 const blocked = (label: string, extra: Partial<ActionState> = {}): ActionState => ({
@@ -87,6 +99,10 @@ const ready = (label: string, onClick: () => void, extra: Partial<ActionState> =
   onClick,
   ...extra,
 })
+
+/** A write in flight: the button says where it is, spins, and cannot be pressed a second time. */
+const inFlight = (phase: 'sign' | 'settle'): ActionState =>
+  blocked(phase === 'sign' ? 'Confirm in your wallet…' : 'Settling on Hedera…', { pending: true })
 
 /**
  * Enough HBAR to send one transaction at {WRITE_GAS_LIMIT}. Hedera reserves limit × gas price up front (1.19 HBAR
@@ -159,11 +175,19 @@ export type Listing = {
  * `amount` is in token base units. `0n` means the field is empty, which is a different state from
  * "too much" and gets its own label.
  */
-export function useFillAction(id: bigint | undefined, listing: Listing | undefined, amount: bigint): ActionState {
+export function useFillAction(
+  id: bigint | undefined,
+  listing: Listing | undefined,
+  amount: bigint,
+  onFilled?: (fill: { hash: `0x${string}`; amount: bigint; cost: bigint }) => void,
+): ActionState {
   const r = useReadiness()
   const { tenor } = addresses
-  const send = useSender()
-  const { isPending } = useWriteContract()
+  const { send, phase } = useSender()
+  // An approval this drawer just saw confirmed. The allowance read normally catches up in the refetch after the
+  // receipt; if the relay lags, this still stops the button asking for the same approval twice.
+  const [approved, setApproved] = useState(0n)
+  const allowance = r.usdcAllowance > approved ? r.usdcAllowance : approved
 
   const { data: quoted } = useReadContract({
     address: tenor,
@@ -219,24 +243,27 @@ export function useFillAction(id: bigint | undefined, listing: Listing | undefin
     if (r.usdc < quote.cost) {
       return blocked('Insufficient USDC', { helper: `This costs ${fmtUsdc(quote.cost)}. Get demo USDC to continue.` })
     }
-    if (r.usdcAllowance < quote.cost) {
+    if (allowance < quote.cost) {
+      const cost = quote.cost
       return ready(
-        `Approve ${fmtUsdc(quote.cost)}`,
-        () =>
-          send('Approve USDC', {
+        `Approve ${fmtUsdc(cost)}`,
+        async () => {
+          const hash = await send('Approve USDC', {
             address: addresses.usdc!,
             abi: erc20Abi,
             functionName: 'approve',
-            args: [tenor, quote.cost],
-          }),
-        { helper: 'The market moves your USDC to the seller in the same transaction as the tokens.' },
+            args: [tenor, cost],
+          })
+          if (hash) setApproved(cost)
+        },
+        { helper: 'Step 1 of 2. Lets the market pay the seller this USDC in the same transaction that delivers your tokens.' },
       )
     }
     return null
-  }, [gate, quote, r, tenor, send])
+  }, [gate, quote, r, tenor, send, allowance])
 
   // Only now is simulating worth a round trip — and only now would its revert be informative.
-  const canSimulate = !gate && !fixup && id !== undefined && amount > 0n && Boolean(tenor)
+  const canSimulate = !gate && !fixup && !phase && id !== undefined && amount > 0n && Boolean(tenor)
   const sim = useSimulateContract({
     address: tenor,
     abi: tenorAbi,
@@ -246,28 +273,44 @@ export function useFillAction(id: bigint | undefined, listing: Listing | undefin
     query: { enabled: canSimulate },
   })
 
+  // Approve then buy is two signatures. Saying so up front is what stops the second one feeling like a repeat.
+  const steps =
+    !gate && quote && r.usdcAssociated && listing
+      ? [
+          { label: `Approve ${fmtUsdc(quote.cost)}`, done: allowance >= quote.cost },
+          { label: `Buy ${fmtTokens(amount, listing.tokenDecimals)}`, done: false },
+        ]
+      : undefined
+
+  if (phase) return { ...inFlight(phase), quote, steps }
   if (gate) return { ...gate, quote }
-  if (fixup) return { ...fixup, quote, pending: isPending }
-  if (sim.isLoading) return { ...blocked('Checking…'), quote }
+  if (fixup) return { ...fixup, quote, steps }
+  if (sim.isLoading) return { ...blocked('Checking…'), quote, steps }
   if (sim.error) {
     const d = resolve(sim.error)
     return {
       ...blocked(d.label),
       quote,
+      steps,
       helper: d.action ?? d.message,
       issuerOnly: d.issuerOnly,
       banner: d.issuerOnly ? { kind: 'warning', text: d.message } : undefined,
     }
   }
-  if (!sim.data) return { ...blocked('Checking…'), quote }
+  if (!sim.data) return { ...blocked('Checking…'), quote, steps }
 
+  const title = `Buy ${fmtTokens(amount, listing!.tokenDecimals)}`
   return {
-    ...ready(`Buy ${fmtTokens(amount, listing!.tokenDecimals)}`, () =>
-      send(`Buy ${fmtTokens(amount, listing!.tokenDecimals)}`, sim.data!.request),
-    ),
+    ...ready(title, async () => {
+      const cost = quote?.cost ?? (amount * listing!.pricePerToken) / 10n ** BigInt(listing!.tokenDecimals)
+      const hash = await send(title, sim.data!.request)
+      if (!hash) return
+      setApproved(0n)
+      onFilled?.({ hash, amount, cost })
+    }),
     quote,
-    pending: isPending,
-    helper: quote ? `${fmtUsdc(quote.cost)} to the seller, settled in one transaction.` : undefined,
+    steps,
+    helper: quote ? `Step 2 of 2. ${fmtUsdc(quote.cost)} to the seller, settled in one transaction.` : undefined,
   }
 }
 
@@ -277,11 +320,19 @@ export function useFillAction(id: bigint | undefined, listing: Listing | undefin
  * `list` creates the hold, and the hold consumes the seller's allowance TO THE DIAMOND — so the
  * approval is not a nicety, it is what makes the reservation possible (SPEC §5.2).
  */
-export function useListAction(amount: bigint, pricePerToken: bigint, expiry: bigint, unlimited = false): ActionState {
+export function useListAction(
+  amount: bigint,
+  pricePerToken: bigint,
+  expiry: bigint,
+  unlimited = false,
+  onListed?: (listed: { hash: `0x${string}`; amount: bigint; pricePerToken: bigint }) => void,
+): ActionState {
   const r = useReadiness()
   const { tenor, token, partition } = addresses
-  const send = useSender()
-  const { isPending } = useWriteContract()
+  const { send, phase } = useSender()
+  // Same guard as buying: an approval just confirmed counts even before the allowance read catches up.
+  const [approved, setApproved] = useState(0n)
+  const tokenAllowance = r.tokenAllowance > approved ? r.tokenAllowance : approved
 
   const { data: maxDuration } = useReadContract({
     address: tenor,
@@ -316,23 +367,26 @@ export function useListAction(amount: bigint, pricePerToken: bigint, expiry: big
 
   const fixup = useMemo(() => {
     if (gate || !token || !tenor) return null
-    if (r.tokenAllowance < amount) {
+    if (tokenAllowance < amount) {
+      const limit = unlimited ? maxUint256 : amount
       return ready(
         'Enable selling',
-        () =>
-          send('Enable selling', {
+        async () => {
+          const hash = await send('Enable selling', {
             address: token,
             abi: erc20Abi,
             functionName: 'approve',
-            args: [tenor, unlimited ? maxUint256 : amount],
-          }),
-        { helper: 'One-time approval so the market can reserve your tokens while they are listed.' },
+            args: [tenor, limit],
+          })
+          if (hash) setApproved(limit)
+        },
+        { helper: 'Step 1 of 2. Lets the market reserve your tokens while they are listed.' },
       )
     }
     return null
-  }, [gate, token, tenor, r.tokenAllowance, amount, unlimited, send])
+  }, [gate, token, tenor, tokenAllowance, amount, unlimited, send])
 
-  const canSimulate = !gate && !fixup && Boolean(tenor && token)
+  const canSimulate = !gate && !fixup && !phase && Boolean(tenor && token)
   const sim = useSimulateContract({
     address: tenor,
     abi: tenorAbi,
@@ -342,18 +396,33 @@ export function useListAction(amount: bigint, pricePerToken: bigint, expiry: big
     query: { enabled: canSimulate },
   })
 
+  const steps =
+    !gate && amount > 0n
+      ? [
+          { label: 'Enable selling', done: tokenAllowance >= amount },
+          { label: `List ${fmtTokens(amount, 6)}`, done: false },
+        ]
+      : undefined
+
+  if (phase) return { ...inFlight(phase), steps }
   if (gate) return gate
-  if (fixup) return { ...fixup, pending: isPending }
-  if (sim.isLoading) return blocked('Checking…')
+  if (fixup) return { ...fixup, steps }
+  if (sim.isLoading) return { ...blocked('Checking…'), steps }
   if (sim.error) {
     const d = resolve(sim.error)
-    return { ...blocked(d.label), helper: d.action ?? d.message, issuerOnly: d.issuerOnly }
+    return { ...blocked(d.label), steps, helper: d.action ?? d.message, issuerOnly: d.issuerOnly }
   }
-  if (!sim.data) return blocked('Checking…')
+  if (!sim.data) return { ...blocked('Checking…'), steps }
 
+  const title = `List ${fmtTokens(amount, 6)}`
   return {
-    ...ready(`List ${fmtTokens(amount, 6)}`, () => send(`List ${fmtTokens(amount, 6)}`, sim.data!.request)),
-    pending: isPending,
+    ...ready(title, async () => {
+      const hash = await send(title, sim.data!.request)
+      if (!hash) return
+      setApproved(0n)
+      onListed?.({ hash, amount, pricePerToken })
+    }),
+    steps,
   }
 }
 
@@ -361,8 +430,7 @@ export function useListAction(amount: bigint, pricePerToken: bigint, expiry: big
 export function useCancelAction(id: bigint | undefined): ActionState {
   const r = useReadiness()
   const { tenor } = addresses
-  const send = useSender()
-  const { isPending } = useWriteContract()
+  const { send, phase } = useSender()
 
   const sim = useSimulateContract({
     address: tenor,
@@ -373,6 +441,7 @@ export function useCancelAction(id: bigint | undefined): ActionState {
     query: { enabled: Boolean(tenor && id !== undefined && r.address) },
   })
 
+  if (phase) return inFlight(phase)
   if (r.disconnected) return blocked('Connect wallet')
   if (sim.isLoading) return blocked('Checking…')
   if (sim.error) {
@@ -380,7 +449,7 @@ export function useCancelAction(id: bigint | undefined): ActionState {
     return { ...blocked(d.label), helper: d.action ?? d.message, issuerOnly: d.issuerOnly }
   }
   if (!sim.data) return blocked('Cancel listing')
-  return { ...ready('Cancel listing', () => send('Cancel listing', sim.data!.request)), pending: isPending }
+  return ready('Cancel listing', () => send('Cancel listing', sim.data!.request))
 }
 
 export { fmtUsdc, fmtTokens, MIN_HBAR }

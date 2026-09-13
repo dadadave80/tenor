@@ -1,13 +1,28 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { formatUnits, parseUnits } from 'viem'
 import { Icon, Identicon } from '@/components/landing/primitives'
-import { fmtUsdc, useFillAction } from '@/lib/actions'
+import { fmtTokens, fmtUsdc, useFillAction } from '@/lib/actions'
+import { hashscan } from '@/lib/chain'
 import { fmtUsd, useUsdcUsd } from '@/lib/oracle'
 import { useReadiness } from '@/lib/readiness'
 import type { ListingRow } from './useListings'
-import { Banner, Drawer, Field, Pill, PrimaryButton } from './ui'
+import { Banner, Drawer, Field, Pill, PrimaryButton, SecondaryButton } from './ui'
+
+const summary: React.CSSProperties = {
+  margin: 0,
+  display: 'grid',
+  gridTemplateColumns: 'auto 1fr',
+  gap: '8px 16px',
+  padding: 14,
+  borderRadius: 'var(--radius-card)',
+  background: 'var(--surface-2)',
+  fontSize: 13,
+}
+
+type Bought = { hash: `0x${string}`; amount: bigint; cost: bigint }
 
 /**
  * Buying from one listing.
@@ -15,11 +30,16 @@ import { Banner, Drawer, Field, Pill, PrimaryButton } from './ui'
  * The readiness strip is the honest part of this panel: it shows the three account facts the trade
  * depends on BEFORE the button says anything, so a blocked button is never a surprise. `useFillAction`
  * decides the label; this component only draws it.
+ *
+ * Once the fill confirms, the drawer stops being a form. The listing it was opened on may now be empty or
+ * gone, so recomputing the button against it would only offer steps that no longer apply.
  */
 export function FillDrawer({ listing, onClose }: { listing: ListingRow | null; onClose: () => void }) {
   const r = useReadiness()
   const oracle = useUsdcUsd()
+  const router = useRouter()
   const [raw, setRaw] = useState('')
+  const [bought, setBought] = useState<Bought | null>(null)
 
   const decimals = listing?.tokenDecimals ?? 6
   const amount = raw ? parseUnits(raw, decimals) : 0n
@@ -28,28 +48,95 @@ export function FillDrawer({ listing, onClose }: { listing: ListingRow | null; o
   // different listing's remaining balance.
   useEffect(() => {
     setRaw('')
+    setBought(null)
   }, [listing?.id])
 
-  const action = useFillAction(listing?.id, listing ?? undefined, amount)
+  const action = useFillAction(listing?.id, listing ?? undefined, amount, setBought)
 
   if (!listing) return null
 
   const price = Number(formatUnits(listing.pricePerToken, 6))
   const remaining = Number(formatUnits(listing.remaining, decimals))
   const affordable = price > 0 ? Math.floor(Number(formatUnits(r.usdc, 6)) / price) : 0
+  const seller = `${listing.seller.slice(0, 6)}…${listing.seller.slice(-4)}`
+  const subtitle = (
+    <>
+      <Identicon addr={listing.seller} size={16} />
+      {seller} · {price.toFixed(2)} USDC per token
+    </>
+  )
+
+  if (bought) {
+    return (
+      <Drawer open onClose={onClose} title="Purchase complete" subtitle={subtitle}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            gap: 12,
+            padding: '28px 0 8px',
+          }}
+        >
+          <span
+            aria-hidden
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 'var(--radius-pill)',
+              display: 'grid',
+              placeItems: 'center',
+              background: 'var(--surface-tint)',
+              color: 'var(--accent)',
+            }}
+          >
+            <Icon name="check" size={26} />
+          </span>
+          <h3 style={{ margin: 0, fontSize: 22, fontWeight: 500, letterSpacing: '-0.01em' }}>
+            You bought {fmtTokens(bought.amount, decimals)}
+          </h3>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5, maxWidth: 320 }}>
+            The bond and the USDC changed hands in one Hedera transaction, after the bond itself checked that you are
+            verified.
+          </p>
+        </div>
+
+        <dl style={summary}>
+          <dt style={{ color: 'var(--text-2)' }}>Paid</dt>
+          <dd style={{ margin: 0, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtUsdc(bought.cost)}</dd>
+          <dt style={{ color: 'var(--text-2)' }}>Price</dt>
+          <dd style={{ margin: 0, textAlign: 'right' }}>{price.toFixed(2)} USDC per token</dd>
+          <dt style={{ color: 'var(--text-2)' }}>Seller</dt>
+          <dd style={{ margin: 0, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{seller}</dd>
+          <dt style={{ color: 'var(--text-2)' }}>Transaction</dt>
+          <dd style={{ margin: 0, textAlign: 'right' }}>
+            <a href={hashscan('transaction', bought.hash)} target="_blank" rel="noreferrer">
+              View on HashScan
+            </a>
+          </dd>
+        </dl>
+
+        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <PrimaryButton
+            action={{
+              label: 'View in Holdings',
+              pending: false,
+              blocked: false,
+              onClick: () => {
+                onClose()
+                router.push('/holdings')
+              },
+            }}
+          />
+          <SecondaryButton onClick={onClose}>Back to the market</SecondaryButton>
+        </div>
+      </Drawer>
+    )
+  }
 
   return (
-    <Drawer
-      open
-      onClose={onClose}
-      title="Buy TGN27"
-      subtitle={
-        <>
-          <Identicon addr={listing.seller} size={16} />
-          {listing.seller.slice(0, 6)}…{listing.seller.slice(-4)} · {price.toFixed(2)} USDC per token
-        </>
-      }
-    >
+    <Drawer open onClose={onClose} title="Buy TGN27" subtitle={subtitle}>
       {action.banner && <Banner kind={action.banner.kind}>{action.banner.text}</Banner>}
 
       {/* The three facts the trade depends on, stated before the button is read. */}
@@ -93,18 +180,7 @@ export function FillDrawer({ listing, onClose }: { listing: ListingRow | null; o
         helper={`${remaining.toLocaleString('en-US')} available at this price`}
       />
 
-      <dl
-        style={{
-          margin: 0,
-          display: 'grid',
-          gridTemplateColumns: 'auto 1fr',
-          gap: '8px 16px',
-          padding: 14,
-          borderRadius: 'var(--radius-card)',
-          background: 'var(--surface-2)',
-          fontSize: 13,
-        }}
-      >
+      <dl style={summary}>
         <dt style={{ color: 'var(--text-2)' }}>You pay</dt>
         <dd style={{ margin: 0, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
           {action.quote ? fmtUsdc(action.quote.cost) : '—'}

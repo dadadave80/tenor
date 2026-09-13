@@ -78,7 +78,8 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
           ['Verification', json.kyc],
         ] as const).filter(([, h]) => h)
         if (sent.length === 0) setNote('Already done — nothing to send.')
-        else for (const [label, h] of sent) track(label, h as `0x${string}`)
+        // Awaited, so the row keeps its spinner until the drip has landed and the card has re-read the account.
+        else await Promise.all(sent.map(([label, h]) => track(label, h as `0x${string}`)))
       } catch (e) {
         fail(title, e)
       } finally {
@@ -91,7 +92,7 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
   const send = async (key: string, title: string, run: () => Promise<`0x${string}`>) => {
     setBusy(key)
     try {
-      track(title, await run())
+      await track(title, await run())
     } catch (e) {
       fail(title, e)
     } finally {

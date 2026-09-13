@@ -1,16 +1,21 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { formatUnits, parseUnits } from 'viem'
+import { Icon } from '@/components/landing/primitives'
 import { fmtTokens, fmtUsdc, useListAction } from '@/lib/actions'
+import { hashscan } from '@/lib/chain'
 import { useReadiness } from '@/lib/readiness'
-import { Banner, Drawer, Field, PrimaryButton } from './ui'
+import { Banner, Drawer, Field, PrimaryButton, SecondaryButton } from './ui'
 
 const DURATIONS = [
   { label: '24h', seconds: 86_400 },
   { label: '3d', seconds: 3 * 86_400 },
   { label: '7d', seconds: 7 * 86_400 },
 ] as const
+
+type Listed = { hash: `0x${string}`; amount: bigint; pricePerToken: bigint }
 
 /**
  * Listing tokens for sale.
@@ -31,15 +36,18 @@ export function SellDrawer({
   available: bigint
 }) {
   const r = useReadiness()
+  const router = useRouter()
   const [amountRaw, setAmountRaw] = useState('')
   const [priceRaw, setPriceRaw] = useState('')
   const [duration, setDuration] = useState<(typeof DURATIONS)[number]>(DURATIONS[1])
   const [unlimited, setUnlimited] = useState(false)
+  const [listed, setListed] = useState<Listed | null>(null)
 
   useEffect(() => {
     if (!open) {
       setAmountRaw('')
       setPriceRaw('')
+      setListed(null)
     }
   }, [open])
 
@@ -53,9 +61,67 @@ export function SellDrawer({
     [duration, amountRaw, priceRaw],
   )
 
-  const action = useListAction(amount, price, expiry, unlimited)
+  const action = useListAction(amount, price, expiry, unlimited, setListed)
 
   const proceeds = amount > 0n && price > 0n ? (amount * price) / 1_000_000n : 0n
+
+  // Once the listing confirms, the drawer says what is now true instead of offering the same form again.
+  if (listed) {
+    return (
+      <Drawer open={open} onClose={onClose} title="Listing live" subtitle={`Available ${fmtTokens(available, 6)}`}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            gap: 12,
+            padding: '28px 0 8px',
+          }}
+        >
+          <span
+            aria-hidden
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 'var(--radius-pill)',
+              display: 'grid',
+              placeItems: 'center',
+              background: 'var(--surface-tint)',
+              color: 'var(--accent)',
+            }}
+          >
+            <Icon name="check" size={26} />
+          </span>
+          <h3 style={{ margin: 0, fontSize: 22, fontWeight: 500, letterSpacing: '-0.01em' }}>
+            Listed {fmtTokens(listed.amount, 6)} at {fmtUsdc(listed.pricePerToken)}
+          </h3>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5, maxWidth: 320 }}>
+            The tokens stay in your wallet, reserved on the bond. A buyer&rsquo;s fill delivers them and pays you in one
+            transaction, and you can cancel any time to release them.
+          </p>
+          <a href={hashscan('transaction', listed.hash)} target="_blank" rel="noreferrer" style={{ fontSize: 13 }}>
+            View on HashScan
+          </a>
+        </div>
+
+        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <PrimaryButton
+            action={{
+              label: 'See it on the market',
+              pending: false,
+              blocked: false,
+              onClick: () => {
+                onClose()
+                router.push('/market')
+              },
+            }}
+          />
+          <SecondaryButton onClick={onClose}>Done</SecondaryButton>
+        </div>
+      </Drawer>
+    )
+  }
 
   return (
     <Drawer open={open} onClose={onClose} title="Sell TGN27" subtitle={`Available ${fmtTokens(available, 6)}`}>

@@ -218,7 +218,8 @@ export default function MarketPage() {
         Every fill is checked by the bond contract itself. Tenor cannot move tokens the bond would refuse to move.
       </p>
 
-      <FillDrawer listing={picked} onClose={() => setPicked(null)} />
+      {/* The live row, not the one clicked: its remaining amount and status keep updating while the drawer is open. */}
+      <FillDrawer listing={picked && (rows.find((x) => x.id === picked.id) ?? picked)} onClose={() => setPicked(null)} />
     </div>
   )
 }

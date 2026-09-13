@@ -102,10 +102,12 @@ export function Toasts() {
   return (
     <div
       aria-live="polite"
+      className="toasts"
       style={{
+        // Bottom-left, clear of the drawers, which open on the right and keep their main button at the bottom.
         position: 'fixed',
         bottom: 20,
-        right: 20,
+        left: 20,
         zIndex: 70,
         display: 'flex',
         flexDirection: 'column',

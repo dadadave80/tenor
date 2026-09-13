@@ -83,8 +83,55 @@ export function Banner({ kind, children }: { kind: 'warning' | 'danger' | 'info'
  */
 export function PrimaryButton({ action, full = true }: { action: ActionState; full?: boolean }) {
   const clickable = Boolean(action.onClick) && !action.pending
+  const current = action.steps ? action.steps.findIndex((s) => !s.done) : -1
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: full ? '100%' : undefined }}>
+      {action.steps && (
+        <ol
+          aria-label="Steps"
+          style={{ margin: '0 0 4px', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}
+        >
+          {action.steps.map((s, i) => (
+            <li
+              key={i}
+              aria-current={i === current ? 'step' : undefined}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                fontSize: 13,
+                color: s.done || i === current ? 'var(--text)' : 'var(--text-2)',
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 22,
+                  height: 22,
+                  flexShrink: 0,
+                  borderRadius: 'var(--radius-pill)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: s.done ? 'var(--surface-tint)' : i === current ? 'var(--text)' : 'var(--surface-2)',
+                  color: s.done ? 'var(--accent)' : i === current ? 'var(--bg)' : 'var(--text-2)',
+                }}
+              >
+                {s.done ? (
+                  <Icon name="check" size={12} />
+                ) : i === current && action.pending ? (
+                  <Spinner size={12} color="var(--bg)" />
+                ) : (
+                  i + 1
+                )}
+              </span>
+              <span style={{ flex: 1 }}>{s.label}</span>
+              {s.done && <span style={{ fontSize: 12, color: 'var(--accent)' }}>Done</span>}
+            </li>
+          ))}
+        </ol>
+      )}
       <button
         type="button"
         onClick={action.onClick}

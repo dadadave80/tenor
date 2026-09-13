@@ -1,5 +1,6 @@
 'use client'
 
+import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useConfig } from 'wagmi'
 import { waitForTransactionReceipt } from 'wagmi/actions'
@@ -35,8 +36,11 @@ type Ctx = {
   activity: Activity[]
   toasts: Toast[]
   dismissToast: (id: string) => void
-  /** Announces a transaction and follows it to a receipt. Returns the card's id. */
-  track: (title: string, hash: `0x${string}`) => string
+  /**
+   * Announces a transaction and follows it to a receipt, then refetches every read on screen. Resolves true
+   * only when it succeeded at consensus, so a caller can await it before showing the next step.
+   */
+  track: (title: string, hash: `0x${string}`) => Promise<boolean>
   /** Records something that failed before it ever became a transaction (a refused signature). */
   fail: (title: string, err: unknown) => void
   /** Shows a toast; pass the `id` of one already showing to update it in place. */
@@ -50,6 +54,7 @@ const KEY = 'tenor.activity'
 
 export function ActivityProvider({ children }: { children: React.ReactNode }) {
   const config = useConfig()
+  const queryClient = useQueryClient()
   const [activity, setActivity] = useState<Activity[]>([])
   const [toasts, setToasts] = useState<Toast[]>([])
   // Ids have to be stable across renders and must not come from Math.random during SSR.
@@ -110,7 +115,7 @@ export function ActivityProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const track = useCallback(
-    (title: string, hash: `0x${string}`) => {
+    async (title: string, hash: `0x${string}`): Promise<boolean> => {
       const id = nextId()
       setActivity((list) => [
         {
@@ -129,31 +134,34 @@ export function ActivityProvider({ children }: { children: React.ReactNode }) {
         ...list,
       ])
       toast(`${title} · submitted`, 'accent', hashscan('transaction', hash), id)
-      ;(async () => {
-        try {
-          const receipt = await waitForTransactionReceipt(config, { hash, confirmations: 1 })
-          if (receipt.status === 'success') {
-            patch(id, (a) => ({ ...a, status: 'Confirmed', steps: a.steps.map((s) => ({ ...s, done: true })) }))
-            toast(`${title} · confirmed`, 'accent', hashscan('transaction', hash), id)
-          } else {
-            // Accepted by the relay, reverted at consensus. This is the case a timer would miss.
-            patch(id, (a) => ({
-              ...a,
-              status: 'Failed',
-              error: 'Reverted on chain.',
-              steps: a.steps.map((s, i) => (i === 3 ? { label: 'Reverted', done: true, failed: true } : s)),
-            }))
-            toast(`${title} · reverted`, 'danger', hashscan('transaction', hash), id)
-          }
-        } catch (e) {
-          const d = resolve(e)
-          patch(id, (a) => ({ ...a, status: 'Failed', error: d.message }))
-          toast(`${title} · ${d.label}`, 'danger', hashscan('transaction', hash), id)
+      try {
+        const receipt = await waitForTransactionReceipt(config, { hash, confirmations: 1 })
+        if (receipt.status === 'success') {
+          patch(id, (a) => ({ ...a, status: 'Confirmed', steps: a.steps.map((s) => ({ ...s, done: true })) }))
+          toast(`${title} · confirmed`, 'accent', hashscan('transaction', hash), id)
+          // Every read on screen is now out of date. Refetch at once rather than on the next 8 s poll, so a button
+          // that just approved moves straight to the next step instead of offering the same approval again.
+          // Bounded, so one slow read cannot hold the caller.
+          await Promise.race([queryClient.refetchQueries({ type: 'active' }), new Promise((r) => setTimeout(r, 4000))])
+          return true
         }
-      })()
-      return id
+        // Accepted by the relay, reverted at consensus. This is the case a timer would miss.
+        patch(id, (a) => ({
+          ...a,
+          status: 'Failed',
+          error: 'Reverted on chain.',
+          steps: a.steps.map((s, i) => (i === 3 ? { label: 'Reverted', done: true, failed: true } : s)),
+        }))
+        toast(`${title} · reverted`, 'danger', hashscan('transaction', hash), id)
+        return false
+      } catch (e) {
+        const d = resolve(e)
+        patch(id, (a) => ({ ...a, status: 'Failed', error: d.message }))
+        toast(`${title} · ${d.label}`, 'danger', hashscan('transaction', hash), id)
+        return false
+      }
     },
-    [config, nextId, patch, toast],
+    [config, queryClient, nextId, patch, toast],
   )
 
   const fail = useCallback(
