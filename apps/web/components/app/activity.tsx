@@ -39,7 +39,8 @@ type Ctx = {
   track: (title: string, hash: `0x${string}`) => string
   /** Records something that failed before it ever became a transaction (a refused signature). */
   fail: (title: string, err: unknown) => void
-  toast: (title: string, kind?: Toast['kind'], href?: string) => void
+  /** Shows a toast; pass the `id` of one already showing to update it in place. */
+  toast: (title: string, kind?: Toast['kind'], href?: string, id?: string) => void
   pending: number
 }
 
@@ -78,16 +79,30 @@ export function ActivityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [activity])
 
-  const dismissToast = useCallback((id: string) => setToasts((t) => t.filter((x) => x.id !== id)), [])
+  // One timer per toast, so updating a toast in place restarts its countdown instead of racing the old one.
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+
+  const dismissToast = useCallback((id: string) => {
+    clearTimeout(timers.current.get(id))
+    timers.current.delete(id)
+    setToasts((t) => t.filter((x) => x.id !== id))
+  }, [])
 
   const toast = useCallback(
-    (title: string, kind: Toast['kind'] = 'accent', href?: string) => {
-      const id = nextId()
-      setToasts((t) => [...t, { id, title, kind, href }])
+    (title: string, kind: Toast['kind'] = 'accent', href?: string, existingId?: string) => {
+      const id = existingId ?? nextId()
+      // A transaction keeps ONE toast that moves from submitted to its outcome, rather than stacking a second.
+      setToasts((t) =>
+        t.some((x) => x.id === id)
+          ? t.map((x) => (x.id === id ? { id, title, kind, href } : x))
+          : [...t, { id, title, kind, href }],
+      )
+      clearTimeout(timers.current.get(id))
+      timers.current.delete(id)
       // Failures stay until dismissed: a message you have to read should not time out.
-      if (kind !== 'danger') setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 6000)
+      if (kind !== 'danger') timers.current.set(id, setTimeout(() => dismissToast(id), 6000))
     },
-    [nextId],
+    [nextId, dismissToast],
   )
 
   const patch = useCallback((id: string, fn: (a: Activity) => Activity) => {
@@ -113,13 +128,13 @@ export function ActivityProvider({ children }: { children: React.ReactNode }) {
         },
         ...list,
       ])
-      toast(`${title} · submitted`, 'accent', hashscan('transaction', hash))
+      toast(`${title} · submitted`, 'accent', hashscan('transaction', hash), id)
       ;(async () => {
         try {
           const receipt = await waitForTransactionReceipt(config, { hash, confirmations: 1 })
           if (receipt.status === 'success') {
             patch(id, (a) => ({ ...a, status: 'Confirmed', steps: a.steps.map((s) => ({ ...s, done: true })) }))
-            toast(`${title} · confirmed`, 'accent', hashscan('transaction', hash))
+            toast(`${title} · confirmed`, 'accent', hashscan('transaction', hash), id)
           } else {
             // Accepted by the relay, reverted at consensus. This is the case a timer would miss.
             patch(id, (a) => ({
@@ -128,12 +143,12 @@ export function ActivityProvider({ children }: { children: React.ReactNode }) {
               error: 'Reverted on chain.',
               steps: a.steps.map((s, i) => (i === 3 ? { label: 'Reverted', done: true, failed: true } : s)),
             }))
-            toast(`${title} · reverted`, 'danger', hashscan('transaction', hash))
+            toast(`${title} · reverted`, 'danger', hashscan('transaction', hash), id)
           }
         } catch (e) {
           const d = resolve(e)
           patch(id, (a) => ({ ...a, status: 'Failed', error: d.message }))
-          toast(`${title} · ${d.label}`, 'danger', hashscan('transaction', hash))
+          toast(`${title} · ${d.label}`, 'danger', hashscan('transaction', hash), id)
         }
       })()
       return id
