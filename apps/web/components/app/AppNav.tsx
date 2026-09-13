@@ -75,7 +75,7 @@ export function AppNav({ onTray, onAccount }: { onTray: () => void; onAccount: (
           gap: 24,
         }}
       >
-        <Link href="/" style={{ color: 'var(--text)', display: 'flex', alignItems: 'center' }}>
+        <Link href="/" className="wordmark" style={{ color: 'var(--text)', display: 'flex', alignItems: 'center' }}>
           <Wordmark height={22} fontSize={17} />
         </Link>
 
@@ -88,6 +88,7 @@ export function AppNav({ onTray, onAccount }: { onTray: () => void; onAccount: (
                   key={r.href}
                   href={r.href}
                   aria-current={on ? 'page' : undefined}
+                  className="nav-tab"
                   style={{
                     height: 34,
                     padding: '0 14px',

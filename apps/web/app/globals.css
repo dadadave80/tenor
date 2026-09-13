@@ -162,3 +162,9 @@ a:hover {
 .wordmark:hover {
   text-decoration: none;
 }
+
+/* App nav tabs: a hairline outline on hover, the same as the pills beside them. Inset, so nothing shifts. */
+.nav-tab:hover {
+  text-decoration: none;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
