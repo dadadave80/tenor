@@ -4,7 +4,7 @@ import { useCallback, useMemo } from 'react'
 import { maxUint256 } from 'viem'
 import { useReadContract, useSimulateContract, useWriteContract } from 'wagmi'
 import { tenorAbi } from './abi'
-import { addresses, ASSOCIATE_GAS_LIMIT } from './chain'
+import { addresses, ASSOCIATE_GAS_LIMIT, WRITE_GAS_LIMIT } from './chain'
 import { resolve } from './errors'
 import { erc20Abi, hrc719Abi, useReadiness, type Readiness } from './readiness'
 import { useActivity } from '@/components/app/activity'
@@ -52,6 +52,10 @@ export type ActionState = {
  * accepted it" from "it succeeded at consensus". So every action here uses `writeContractAsync` and
  * hands the hash straight to `track`, and a refusal in the wallet is recorded by `fail` rather than
  * vanishing.
+ *
+ * Every write also carries an explicit gas limit. The relay's estimate for calls that reach the ATS token or
+ * `0x167` is too low — a fill sent with it reverted out of gas — so a request without its own `gas` gets
+ * {WRITE_GAS_LIMIT}.
  */
 function useSender() {
   const { writeContractAsync } = useWriteContract()
@@ -60,7 +64,7 @@ function useSender() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- one call shape per action site
     async (title: string, request: any) => {
       try {
-        track(title, await writeContractAsync(request))
+        track(title, await writeContractAsync({ ...request, gas: request.gas ?? WRITE_GAS_LIMIT }))
       } catch (e) {
         fail(title, e)
       }
@@ -84,8 +88,12 @@ const ready = (label: string, onClick: () => void, extra: Partial<ActionState> =
   ...extra,
 })
 
-/** Enough HBAR to pay for one transaction, including an HTS association. 18 dp on the EVM side. */
-const MIN_HBAR = 500_000_000_000_000_000n // 0.5 HBAR
+/**
+ * Enough HBAR to send one transaction at {WRITE_GAS_LIMIT}. Hedera reserves limit × gas price up front (1.19 HBAR
+ * at 1,190 gwei) and charges at least 80% of it, so with less the wallet refuses before the chain sees anything.
+ * 18 dp on the EVM side.
+ */
+const MIN_HBAR = 1_500_000_000_000_000_000n // 1.5 HBAR
 
 function fmtUsdc(v: bigint): string {
   const whole = v / 1_000_000n

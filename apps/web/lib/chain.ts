@@ -35,6 +35,13 @@ export const HTS_SYSTEM_CONTRACT = '0x0000000000000000000000000000000000000167' 
  */
 export const ASSOCIATE_GAS_LIMIT = 1_000_000n
 
+/**
+ * The gas limit every other write carries. The relay under-estimates calls that reach the ATS token or `0x167`:
+ * a fill sent with its estimate ran out at 392,031 of 409,884 gas, a cancel at 244,993 of 256,391, and a fill has
+ * used up to 553,904. Hedera charges at least 80% of the limit, so this is not free — about 0.95 HBAR per write.
+ */
+export const WRITE_GAS_LIMIT = 1_000_000n
+
 /** USDC is 6 dp; the bond is issued at 6 dp too, so price and coupon maths share one scale. */
 export const USDC_DECIMALS = 6
 
