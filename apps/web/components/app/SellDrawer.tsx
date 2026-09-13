@@ -44,10 +44,11 @@ export function SellDrawer({
   const [listed, setListed] = useState<Listed | null>(null)
 
   useEffect(() => {
+    // Cleared on open as well as close: a listing that landed after the drawer closed must not greet the next visit.
+    setListed(null)
     if (!open) {
       setAmountRaw('')
       setPriceRaw('')
-      setListed(null)
     }
   }, [open])
 

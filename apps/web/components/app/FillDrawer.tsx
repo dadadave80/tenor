@@ -22,7 +22,7 @@ const summary: React.CSSProperties = {
   fontSize: 13,
 }
 
-type Bought = { hash: `0x${string}`; amount: bigint; cost: bigint }
+type Bought = { id: bigint; hash: `0x${string}`; amount: bigint; cost: bigint }
 
 /**
  * Buying from one listing.
@@ -66,7 +66,8 @@ export function FillDrawer({ listing, onClose }: { listing: ListingRow | null; o
     </>
   )
 
-  if (bought) {
+  // Only for the listing it was bought from: a fill that lands after the drawer moved on must not claim another listing.
+  if (bought && bought.id === listing.id) {
     return (
       <Drawer open onClose={onClose} title="Purchase complete" subtitle={subtitle}>
         <div

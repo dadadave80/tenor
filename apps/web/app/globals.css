@@ -169,8 +169,8 @@ a:hover {
   box-shadow: inset 0 0 0 1px var(--border);
 }
 
-/* On a phone a drawer is the whole screen and its button sits at the bottom, so toasts move to the top. */
-@media (max-width: 520px) {
+/* Below this width a bottom-left toast reaches under the 440px drawer and its button, so toasts move to the top. */
+@media (max-width: 820px) {
   .toasts {
     top: 12px !important;
     bottom: auto !important;

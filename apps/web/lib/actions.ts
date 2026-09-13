@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { maxUint256 } from 'viem'
 import { useReadContract, useSimulateContract, useWriteContract } from 'wagmi'
 import { tenorAbi } from './abi'
@@ -179,7 +179,7 @@ export function useFillAction(
   id: bigint | undefined,
   listing: Listing | undefined,
   amount: bigint,
-  onFilled?: (fill: { hash: `0x${string}`; amount: bigint; cost: bigint }) => void,
+  onFilled?: (fill: { id: bigint; hash: `0x${string}`; amount: bigint; cost: bigint }) => void,
 ): ActionState {
   const r = useReadiness()
   const { tenor } = addresses
@@ -188,6 +188,8 @@ export function useFillAction(
   // receipt; if the relay lags, this still stops the button asking for the same approval twice.
   const [approved, setApproved] = useState(0n)
   const allowance = r.usdcAllowance > approved ? r.usdcAllowance : approved
+  // A fresh allowance read supersedes the override, including after a fill whose receipt wait failed.
+  useEffect(() => setApproved(0n), [r.usdcAllowance])
 
   const { data: quoted } = useReadContract({
     address: tenor,
@@ -282,7 +284,12 @@ export function useFillAction(
         ]
       : undefined
 
-  if (phase) return { ...inFlight(phase), quote, steps }
+  // Held from before the write: the refetch after the receipt can flip the gate (the listing has less left) while
+  // the button is still settling, and the steps must not vanish or un-tick mid-flight.
+  const heldSteps = useRef(steps)
+  if (!phase) heldSteps.current = steps
+
+  if (phase) return { ...inFlight(phase), quote, steps: heldSteps.current }
   if (gate) return { ...gate, quote }
   if (fixup) return { ...fixup, quote, steps }
   if (sim.isLoading) return { ...blocked('Checking…'), quote, steps }
@@ -306,7 +313,7 @@ export function useFillAction(
       const hash = await send(title, sim.data!.request)
       if (!hash) return
       setApproved(0n)
-      onFilled?.({ hash, amount, cost })
+      onFilled?.({ id: id!, hash, amount, cost })
     }),
     quote,
     steps,
@@ -333,6 +340,7 @@ export function useListAction(
   // Same guard as buying: an approval just confirmed counts even before the allowance read catches up.
   const [approved, setApproved] = useState(0n)
   const tokenAllowance = r.tokenAllowance > approved ? r.tokenAllowance : approved
+  useEffect(() => setApproved(0n), [r.tokenAllowance])
 
   const { data: maxDuration } = useReadContract({
     address: tenor,
@@ -404,7 +412,10 @@ export function useListAction(
         ]
       : undefined
 
-  if (phase) return { ...inFlight(phase), steps }
+  const heldSteps = useRef(steps)
+  if (!phase) heldSteps.current = steps
+
+  if (phase) return { ...inFlight(phase), steps: heldSteps.current }
   if (gate) return gate
   if (fixup) return { ...fixup, steps }
   if (sim.isLoading) return { ...blocked('Checking…'), steps }
