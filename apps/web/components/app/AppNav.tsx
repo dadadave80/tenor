@@ -30,6 +30,7 @@ export function AppNav({ onTray, onAccount }: { onTray: () => void; onAccount: (
   const { disconnect } = useDisconnect()
   const { ready, authenticated, login, logout } = usePrivy()
   const [menu, setMenu] = useState(false)
+  const [copied, setCopied] = useState(false)
   const { atRisk } = useSignInMethods()
 
   const signIn = () => {
@@ -42,6 +43,14 @@ export function AppNav({ onTray, onAccount }: { onTray: () => void; onAccount: (
     setMenu(false)
     disconnect()
     if (authenticated) await logout()
+  }
+
+  // The menu stays open so "Copied" is visible: closing it at once would leave no sign the copy happened.
+  const copyAddress = async () => {
+    if (!address) return
+    await navigator.clipboard.writeText(address)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   return (
@@ -186,6 +195,22 @@ export function AppNav({ onTray, onAccount }: { onTray: () => void; onAccount: (
                       {r.label}
                     </Link>
                   ))}
+                <button
+                  type="button"
+                  onClick={copyAddress}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--text)',
+                    fontSize: 13,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {copied ? 'Copied' : 'Copy address'}
+                </button>
                 <a
                   href={hashscan('account', address)}
                   target="_blank"
