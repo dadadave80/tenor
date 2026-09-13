@@ -84,7 +84,7 @@ Companion documents: `docs/DESIGN.md` (UX flows, screens, components, copy) · *
         │ issue · grant KYC · mint · fund & schedule coupons         │ enable selling · list · approve USDC · fill · cancel
         ▼                                                            ▼
  ┌────────────────────────────────┐  createHoldFrom / executeHold  ┌────────────────────────────────────────┐
- │ ATS security token             │◄─────────────────────────────►│ TenorDiamond  (EIP-2535 via Lattice)    │
+ │ ATS security token             │◄─────────────────────────────►│ Tenor  (EIP-2535, Tenor is Lattice)     │
  │ diamond · ERC-1400 / ERC-3643  │        escrow = diamond        │  DiamondCut · Loupe · ERC165            │
  │ Hold · KYC · ControlList       │                                │  AccessControl · Pausable               │
  │ Pause · Freeze                 │                                │  TenorMarket · TenorCoupon              │
@@ -172,7 +172,7 @@ Hold execution
 ### 5.3 Lattice — **SUPERSEDED, see `docs/GROUND-TRUTH.md` §2–§3**
 The signatures printed here in v4 were wrong in arity, argument order, naming, error types, and — most consequentially — omitted that every mutating helper is `AccessControl`-gated on `msg.sender`. Do not write code from this section.
 
-Also used: diamond-lib core facets (`DiamondCutFacet`, `DiamondLoupeFacet`, `ERC165Facet`, `OwnableFacet`), `AccessControl`, `Pausable`, `ReentrancyGuard`, `Initializable`, `LatticeFactory`/`LatticeRegistry`.
+Also used: diamond-lib core facets (`DiamondCutFacet`, `DiamondLoupeFacet`, `ERC165Facet`, `OwnableFacet`), `AccessControl`, `Pausable`, `ReentrancyGuard`, `Initializable`, and diamond-lib's `OwnableLib` (the `Tenor` diamond records its deployer as owner).
 
 ---
 
@@ -282,10 +282,10 @@ See `contracts/src/interfaces/ITenorCoupon.sol` — authored, authoritative, and
 ## 8. Initialization and deployment
 
 - `TenorInit.init(admin, issuer, usdc, token, feeBps, maxDuration)` **[DEV-5: no `pauser` parameter]**: calls `AccessControlLib.__AccessControl_init(admin)`, grants `admin` the Lattice module roles (`HTS_MANAGER_ROLE`, `HTS_OPERATOR_ROLE`) and `issuer` both `ISSUER_ROLE` and `HSS_SCHEDULER_ROLE`, runs `__HTSAdapter_init()` / `__HSSAdapter_init()` / `__Pausable_init()`, writes market and coupon storage, and registers the ERC-165 ids for `ITenorMarket` and `ITenorCoupon` via `ERC165Lib.erc165Storage().supportedInterfaces[...] = true`.
-  **[DEV-3]** It does **not** associate USDC — `msg.sender` inside the init delegatecall is the factory, which holds no role.
-- `DeployTenor.s.sol` follows the Lattice recipe pattern: deploy `LatticeRegistry` + `LatticeFactory` on `hedera-testnet` if `LATTICE_FACTORY` is unset; then a single create-and-initialize transaction cutting the facet set of §3; then **[DEV-3]** an admin transaction calling `HTSAdapter.associateToken(usdc)` on the new diamond. Deterministic address via `LATTICE_SALT` and `factory.predict`.
+  **[DEV-3]** It does **not** associate USDC — the association calls `0x167`, which a forge script cannot execute, so it is a separate post-deploy admin transaction.
+- `DeployTenor.s.sol` follows the Lattice recipe pattern for the cut but creates the diamond itself: `Tenor` (`contract Tenor is Lattice`) records its deployer as owner through diamond-lib's `OwnableLib`, and `initialize` accepts only that owner, so the create and initialize transactions leave no window in which anyone else can install a cut. Then **[DEV-3]** an admin transaction calls `HTSAdapter.associateToken(usdc)` on the new diamond. `bun run deploy:tenor -- --dry-run` prints the address in advance (a plain CREATE from the operator).
 - Network: RPC alias `hedera-testnet` (chain id 296). Use `--legacy` if type-2 fee estimation fails on the relay; set explicit gas for the create-and-init transaction.
-- Verification: every facet and the diamond verified on HashScan; links recorded in `deployments/296/` and the README.
+- Verification: every contract the deploy creates (the diamond, its facets and initializers) and every ATS contract verified on Sourcify as `exact_match`, which is what HashScan displays — `bun run verify:tenor` and `bun run verify:ats`; addresses recorded in `deployments/296/` and the README.
 
 ---
 
@@ -352,7 +352,7 @@ Both fallbacks are selected by build-time flags in the library and the deploy sc
 | Milestone | Definition of done | Gate |
 |---|---|---|
 | M1 Eligibility | ATS on testnet; bond issued with the §11.1 configuration; KYC granted to A and B, not C; mint; one successful transfer; one blocked transfer; transaction ids recorded | Tag `v0.1-eligible` before anything in M2 begins |
-| M2 Market | `TenorDiamond` deployed through `LatticeFactory`; enable selling → list (one tx) → fill (verified buyer) → fill (unverified buyer reverts) → cancel on testnet; verified on HashScan | — |
+| M2 Market | `Tenor` diamond deployed (`Tenor is Lattice`, owner-gated `initialize`); enable selling → list (one tx) → fill (verified buyer) → fill (unverified buyer reverts) → cancel on testnet; verified on HashScan | — |
 | G1 HTS path | `TenorHTS.transferFrom` and `HTSAdapter.associateToken` passing unit tests and one real testnet transfer | Sat 22:00 — otherwise USDC-leg fallback |
 | G2 HSS path | `hasScheduleCapacity` succeeds on testnet; one scheduled `payCoupon` executes at expiry | Sun 09:00 — otherwise scheduling fallback |
 | M3 Coupons | Fund → schedule → automatic payment visible on HashScan | — |

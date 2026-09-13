@@ -7,15 +7,16 @@ that fails renders `—`; nothing on any page is a sample value.
 
 | What | Address | |
 |---|---|---|
-| **Tenor diamond** (market + coupons) | `0x214E411f9E556f1A83eB2277376c88E44A919159` | [HashScan](https://hashscan.io/testnet/contract/0x214E411f9E556f1A83eB2277376c88E44A919159) |
+| **Tenor diamond** (market + coupons) | `0xD81B627A11ED35110fAE3B0EdbBe475CA6454457` | [HashScan](https://hashscan.io/testnet/contract/0xD81B627A11ED35110fAE3B0EdbBe475CA6454457) |
 | **TGN27** — the bond (ATS / ERC-3643) | `0x1EB9D5370382dAF0A0A116C0b7C77899799d5EAF` | [HashScan](https://hashscan.io/testnet/contract/0x1EB9D5370382dAF0A0A116C0b7C77899799d5EAF) |
 | **Demo USDC** (HTS, 6 dp) | `0.0.10504590` · `0x…a0498e` | [HashScan](https://hashscan.io/testnet/token/0.0.10504590) |
 | ATS BusinessLogicResolver | `0x0aFFA521E6019AAfc4A61829c1B823375E1Bf040` | [HashScan](https://hashscan.io/testnet/contract/0x0aFFA521E6019AAfc4A61829c1B823375E1Bf040) |
 | ATS Factory | `0x6b48Ac8a6fb42b82Bc1e2d615503e9274Db8bA05` | [HashScan](https://hashscan.io/testnet/contract/0x6b48Ac8a6fb42b82Bc1e2d615503e9274Db8bA05) |
 | Issuer / operator | `0xc46A896cBf32Ba3212ebE12108345F30AC0a0Efd` | [HashScan](https://hashscan.io/testnet/account/0xc46A896cBf32Ba3212ebE12108345F30AC0a0Efd) |
 
-**All 11 contracts are verified on Sourcify, `exact_match`** — the diamond itself plus all ten
-facets. Run `bun run verify:tenor` to re-check; it prints each verdict.
+**Every contract is verified on Sourcify, `exact_match`**: the 14 this deploy created (the `Tenor`
+diamond, ten facets, three initializers) and all 121 ATS contracts. Run `bun run verify:tenor` and
+`bun run verify:ats` to re-check; each prints its verdicts.
 
 The diamond presents 10 facets: ERC165, DiamondLoupe, AccessControlDiamondCut, AccessControl,
 Receive, Pausable, HTSAdapter (`0x167`), HSSAdapter (`0x16b`), TenorMarket, TenorCoupon. `/contracts`
@@ -28,10 +29,10 @@ reads them from `DiamondLoupe.facets()`, so the page shows what the diamond actu
 | A compliant transfer is allowed | [`0x638e0e51…`](https://hashscan.io/testnet/transaction/0x638e0e517920f2c5b1e3403f8761269d6a4763800f923f553c7f0bba0db8f94a) |
 | The same transfer to an unverified holder is refused **by the token** | reverted `InvalidKycStatus()` `0xfc855b1b` |
 | KYC granted to A | [`0x9712e384…`](https://hashscan.io/testnet/transaction/0x9712e3844512f40666e1e756fca143cb585bd9bba0538ba685d1bd6e3e070027) |
-| **G1 — atomic delivery-versus-payment**, 25 TGN27 against 2,450 USDC, buyer ≠ seller, one transaction | [`0x688b15de…`](https://hashscan.io/testnet/transaction/0x688b15defa101b54f2efeda55d575817393438204b3b85df36809f2532227fe9) |
-| A listing created with its backing hold, in one transaction | [`0xbaf4b2d3…`](https://hashscan.io/testnet/transaction/0xbaf4b2d32fe14256df2a8af432f46417c1848dac47d8252b24a9c149c3270900) |
-| A coupon paid, 1,462.50 USDC across 2 holders, triggered by a **non-issuer** | [`0xcf6b13e3…`](https://hashscan.io/testnet/transaction/0xcf6b13e39b07e30625e18c4ad7d5b5c61ee6bacefa38314c9e6d4f4ffd1b8586) |
-| A freshly generated wallet — what a passkey sign-in produces — funded and buying | [`0x41c213d6…`](https://hashscan.io/testnet/transaction/0x41c213d6583c5aa36f9ba18dc6dcbc27fb146a2e9df4317c62276c1ccfa29096) |
+| **G1 — atomic delivery-versus-payment**, 25 TGN27 against 2,450 USDC, buyer ≠ seller, one transaction | [`0x9553256d…`](https://hashscan.io/testnet/transaction/0x9553256de24f6be3ac9f4db343b7b0d6be0b4293acbd20b17666f48d3201ba20) |
+| A listing created with its backing hold, in one transaction | [`0xcdbdeb07…`](https://hashscan.io/testnet/transaction/0xcdbdeb07c41a5c9b49edd649508f1fb03bcb9bca41dd3d2f69de816356f49469) |
+| A coupon paid, 1,462.50 USDC across 2 holders, triggered by a **non-issuer** | [`0x0a377c80…`](https://hashscan.io/testnet/transaction/0x0a377c8025481788e9c2acf83c4edec56fa2b35bbd5ae2ad2798c44a90f56791) |
+| A freshly generated wallet — what a passkey sign-in produces — funded and buying | [`0x1819d48c…`](https://hashscan.io/testnet/transaction/0x1819d48c1c3515fa8e6a54c25bcdc70a8f9c129a42ba23d8c8f14d37bb4c4f94) |
 
 Reproduce the market evidence with `bun run integration`, and the coupon with `bun run coupon`.
 
@@ -84,7 +85,7 @@ app's copy says exactly that and no more.
 ```bash
 git submodule update --init --recursive
 bun install
-cd contracts && forge test          # 165 tests
+cd contracts && forge test          # 167 tests
 cd .. && bun run gen:abi
 bun run sync:env                    # writes apps/web/.env.local from the deployment record
 cd apps/web && bun run dev
@@ -93,7 +94,12 @@ cd apps/web && bun run dev
 `apps/web/.env.local` also needs `NEXT_PUBLIC_PRIVY_APP_ID` for sign-in and `TENOR_OPERATOR_KEY`
 (server-side, deliberately not `NEXT_PUBLIC_`) for the faucet.
 
-To deploy from scratch, in order: `deploy:ats` → `create:usdc` → `issue:bond` → `grant:kyc` →
-`deploy:tenor` → `verify:tenor` → `sync:env` → `integration`. §9 of `GROUND-TRUTH.md` explains how to
-rehearse the whole chain against a local node first, which is how six real breaks were found before
-they cost testnet HBAR.
+To deploy from scratch, in order: `deploy:ats` → `verify:ats` → `create:usdc` → `issue:bond` →
+`grant:kyc` → `deploy:tenor` (which verifies everything it creates) → `sync:env` → `integration`. §9 of
+`GROUND-TRUTH.md` explains how to rehearse the whole chain against a local node first, which is how six
+real breaks were found before they cost testnet HBAR.
+
+To replace a live diamond: commit, `bun run deploy:tenor`, `bun run sync:env`, point the hosting
+environment's `NEXT_PUBLIC_TENOR_DIAMOND` and `NEXT_PUBLIC_DEPLOY_BLOCK` at the new record, then
+`bun run retire:diamond -- <old address> --execute` to cancel its live listings, pause it and zero the
+allowance it holds.

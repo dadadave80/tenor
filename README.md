@@ -47,7 +47,7 @@ stranding everyone else's coupon.
         │ issue · grant KYC · mint · fund & schedule coupons    │ enable selling · list · approve · fill · cancel
         ▼                                                        ▼
  ┌────────────────────────────────┐  createHoldFrom / executeHold  ┌────────────────────────────────────────┐
- │ ATS security token             │◄─────────────────────────────►│ TenorDiamond  (EIP-2535 via Lattice)    │
+ │ ATS security token             │◄─────────────────────────────►│ Tenor  (EIP-2535, Tenor is Lattice)     │
  │ diamond · ERC-1400 / ERC-3643  │        escrow = diamond        │  DiamondCut · Loupe · ERC165 · Receive  │
  │ Hold · KYC · ControlList       │                                │  AccessControl · Pausable               │
  │ Pause · Freeze                 │                                │  TenorMarket · TenorCoupon              │
@@ -66,12 +66,14 @@ modules**, including new reusable facets for the Hedera Token Service and Hedera
 
 ## Deployed addresses (Hedera testnet, chain 296)
 
-All eleven contracts are **verified on Sourcify, `exact_match`** — the diamond itself plus all ten
-facets. `bun run verify:tenor` re-checks and prints each verdict.
+Every contract is **verified on Sourcify, `exact_match`**: the 14 this deploy created — the `Tenor`
+diamond, its ten facets and three initializers — and all 121 contracts of the ATS system. The retired
+first deployment's 16 contracts are verified too. `bun run verify:tenor` and `bun run verify:ats`
+re-check and print each verdict.
 
 | Contract | Address | HashScan |
 |---|---|---|
-| **Tenor diamond** (market + coupons) | `0x214E411f9E556f1A83eB2277376c88E44A919159` | [open](https://hashscan.io/testnet/contract/0x214E411f9E556f1A83eB2277376c88E44A919159) |
+| **Tenor diamond** (market + coupons) | `0xD81B627A11ED35110fAE3B0EdbBe475CA6454457` | [open](https://hashscan.io/testnet/contract/0xD81B627A11ED35110fAE3B0EdbBe475CA6454457) |
 | **Tenor Green Note 2027 (TGN27)** | `0x1EB9D5370382dAF0A0A116C0b7C77899799d5EAF` | [open](https://hashscan.io/testnet/contract/0x1EB9D5370382dAF0A0A116C0b7C77899799d5EAF) |
 | **Demo USDC** (HTS, 6 dp) | `0.0.10504590` · `0x…a0498e` | [open](https://hashscan.io/testnet/token/0.0.10504590) |
 | ATS BusinessLogicResolver | `0x0aFFA521E6019AAfc4A61829c1B823375E1Bf040` | [open](https://hashscan.io/testnet/contract/0x0aFFA521E6019AAfc4A61829c1B823375E1Bf040) |
@@ -82,11 +84,11 @@ facets. `bun run verify:tenor` re-checks and prints each verdict.
 
 | Claim | Transaction |
 |---|---|
-| **G1 — atomic delivery-versus-payment.** 25 TGN27 against 2,450 USDC, buyer ≠ seller, both legs in one transaction with the bond checking compliance | [`0x688b15de…`](https://hashscan.io/testnet/transaction/0x688b15defa101b54f2efeda55d575817393438204b3b85df36809f2532227fe9) |
+| **G1 — atomic delivery-versus-payment.** 25 TGN27 against 2,450 USDC, buyer ≠ seller, both legs in one transaction with the bond checking compliance | [`0x9553256d…`](https://hashscan.io/testnet/transaction/0x9553256de24f6be3ac9f4db343b7b0d6be0b4293acbd20b17666f48d3201ba20) |
 | A compliant transfer is allowed | [`0x638e0e51…`](https://hashscan.io/testnet/transaction/0x638e0e517920f2c5b1e3403f8761269d6a4763800f923f553c7f0bba0db8f94a) |
 | The same transfer to an unverified holder is refused **by the token**, `InvalidKycStatus()` `0xfc855b1b` | selector asserted, not just "it reverted" |
-| A coupon paid — 1,462.50 USDC across 2 holders, triggered by a **non-issuer** | [`0xcf6b13e3…`](https://hashscan.io/testnet/transaction/0xcf6b13e39b07e30625e18c4ad7d5b5c61ee6bacefa38314c9e6d4f4ffd1b8586) |
-| A freshly generated wallet — what a passkey sign-in produces — funded and buying | [`0x41c213d6…`](https://hashscan.io/testnet/transaction/0x41c213d6583c5aa36f9ba18dc6dcbc27fb146a2e9df4317c62276c1ccfa29096) |
+| A coupon paid — 1,462.50 USDC across 2 holders, triggered by a **non-issuer** | [`0x0a377c80…`](https://hashscan.io/testnet/transaction/0x0a377c8025481788e9c2acf83c4edec56fa2b35bbd5ae2ad2798c44a90f56791) |
+| A freshly generated wallet — what a passkey sign-in produces — funded and buying | [`0x1819d48c…`](https://hashscan.io/testnet/transaction/0x1819d48c1c3515fa8e6a54c25bcdc70a8f9c129a42ba23d8c8f14d37bb4c4f94) |
 
 `bun run integration` reproduces the market evidence; `bun run coupon` reproduces the coupon.
 

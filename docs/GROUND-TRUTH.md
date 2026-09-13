@@ -189,7 +189,7 @@ not needed for the capacity check. What remains unverified is the end-to-end fir
 `payCoupon` actually executes at expiry with the diamond as sender. That needs a funded testnet
 operator and is the real G2 exit criterion.
 
-### 3.3 G1 gate status — **PASSES** (2026-09-12). Fill `0x688b15de…`; see §10 for the coupon gate.
+### 3.3 G1 gate status — **PASSES** (2026-09-12; re-run on the `Tenor` diamond 2026-09-13). Fill `0x9553256d…`; see §10 for the coupon gate.
 
 `contracts/lib/lattice/script/config/hedera/ProbeHedera.s.sol` is a day-0 probe that exercises
 HIP-906 `transferFrom`, the `delegatableContractId` key rule, and (probe 6) `scheduleSelfCall` ~60s
@@ -444,9 +444,11 @@ no amount of reading surfaced, listed in the order they bit:
 - `simulateContract(fill)` succeeding through the **public relay** for an eligible buyer. The whole
   label machine is `eth_call` faithfully executing `0x167` allowance semantics; the mock says it
   works, the relay is the thing that has to agree. First thing to check after G1.
-- That HashScan shows the **diamond** verified, not only the facets — it is a nested CREATE2 inside
-  `LatticeFactory`. Fallback if forge's `additionalContracts` walk misses it:
-  `forge verify-contract <tenor> Lattice --verifier sourcify --verifier-url https://server-verify.hashscan.io`.
+- That HashScan shows the **diamond** verified, not only the facets. The first diamond was a nested CREATE2
+  inside `LatticeFactory` that forge's `additionalContracts` never listed; the owner-gated `Tenor` redeploy
+  creates it as a top-level CREATE. `bun run verify:tenor` discovers every contract a deploy creates from the
+  broadcast record and the mirror node (reading the factory's `DiamondDeployed` event for the old record), then
+  submits each to Sourcify's v2 API — `forge --verify` posts to Sourcify's removed v1 API and cannot.
 
 ---
 
@@ -476,7 +478,7 @@ Two independent schedules (`0.0.10505907`, `0.0.10506145`), both created by `sch
 executed by the network within 25 ms of their pay date, both failed with **`INVALID_PAYER_SIGNATURE`**.
 Neither produced a contract result, so the inner `payCoupon` never reached the EVM.
 
-The payer is the diamond (`0.0.10504773`), which is what `HSSAdapterLib.scheduleSelfCall` intends —
+The payer is the diamond (`0.0.10504773`, the first deployment, since retired), which is what `HSSAdapterLib.scheduleSelfCall` intends —
 HIP-1215 makes the calling contract the schedule's payer. The diamond's `admin_key` is a
 self-referencing `contractID` key, which is correct, and it held 20 HBAR throughout.
 
