@@ -50,6 +50,11 @@ const B_USDC = 5_000n * 10n ** 6n
 const B_HBAR = 30n * 10n ** 18n
 /** The relay's estimate for a `0x167` call is unreliable, and an under-estimate fails outright. */
 const HTS_GAS = 1_000_000n
+/**
+ * `fill` executes the ATS hold and moves USDC through `0x167` in one call. The relay's estimate is too low: with it
+ * as the limit (409,884) a fill on testnet ran out at 392,031 gas and reverted with no data.
+ */
+const FILL_GAS = 3_000_000n
 
 const step = async (label: string, p: Promise<{ hash: string; wait: () => Promise<unknown> }>) => {
   const tx = await p
@@ -105,11 +110,14 @@ console.log('\nlisting …')
 // `list` creates a hold, and the hold consumes A's allowance TO THE DIAMOND. Without it there is no
 // reservation and no listing at all.
 if (((await bond.allowance(A, tenor)) as bigint) < SELL_AMOUNT) {
-  await step('A approves the market on the bond', bond.approve(tenor, SELL_AMOUNT * 4n))
+  await step('A approves the market on the bond', bond.approve(tenor, SELL_AMOUNT * 4n, { gasLimit: HTS_GAS }))
 }
 
 const expiry = BigInt(Math.floor(Date.now() / 1000) + 3 * 24 * 60 * 60)
-const listTx = await step('A lists 25 TGN27 at 98 USDC', market.list(token, partition, SELL_AMOUNT, PRICE, expiry))
+const listTx = await step(
+  'A lists 25 TGN27 at 98 USDC',
+  market.list(token, partition, SELL_AMOUNT, PRICE, expiry, { gasLimit: HTS_GAS }),
+)
 const listReceipt = await provider.getTransactionReceipt(listTx.hash)
 const listed = listReceipt!.logs
   .map((l) => {
@@ -146,7 +154,7 @@ const aUsdcBefore = (await usdcAsA.balanceOf(A)) as bigint
 const bBondBefore = (await new Contract(token, ERC20_ABI, b).balanceOf(B)) as bigint
 
 console.log('\nfilling …')
-const fillTx = await step('B fills 25 TGN27', marketAsB.fill(listingId, SELL_AMOUNT))
+const fillTx = await step('B fills 25 TGN27', marketAsB.fill(listingId, SELL_AMOUNT, { gasLimit: FILL_GAS }))
 const fillReceipt = await provider.getTransactionReceipt(fillTx.hash)
 const filled = fillReceipt!.logs
   .map((l) => {
