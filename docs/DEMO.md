@@ -54,14 +54,33 @@ Reproduce the market evidence with `bun run integration`, and the coupon with `b
    sentence. The order matters: `fill()` reverts in *contract* order, which would tell an unverified
    buyer to approve USDC first and only then that they were never eligible.
 5. **The compliance beat.** Revoke KYC or freeze the buyer from the issuer account and the button
-   changes to `Verification required` / `Account frozen` before anything is signed. That label comes
-   from a real simulated revert, not from a flag in the UI.
+   changes to `Verification required` / `Account blocked` before anything is signed. That label comes
+   from a real simulated revert, not from a flag in the UI. Drive it with `bun run issuer` — see below.
 6. **`/holdings`.** List tokens. The approval is what lets the market place a *hold* — the tokens
    never leave the seller's account, they move out of the sellable balance and come back on cancel.
 7. **`/coupons`.** Funded amount, requirement, per-holder entitlement and the booked Hedera Schedule
    Service entity, all read from the diamond.
 8. **`/contracts`.** Every address the app talks to, the fee and duration config, and the live facet
    cut. It flags a security or settlement token that disagrees with what the market has pinned.
+
+### Filming the compliance beat
+
+```bash
+bun run issuer status <buyer>     # KYC, control list, frozen tokens and bond balance
+bun run issuer freeze <buyer>     # the Buy button flips to "Account blocked"
+bun run issuer unfreeze <buyer>   # and back
+bun run issuer pause              # the market shows "Trading paused by issuer"
+bun run issuer unpause            # and back
+```
+
+Each mutating command prints its transaction hash and HashScan link, then re-reads the chain and
+prints the resulting state, so the shot can cut straight from the terminal to the browser.
+
+Say `Account blocked`, not "Account frozen", when the freeze lands. ATS 8.0.0's `setAddressFrozen`
+does not touch the frozen-token ledger — it toggles the **control list**, which on this blocklist
+token means `addToControlList`. The refusal is `AccountIsBlocked`, and that is the label
+`lib/errors.ts` returns. `IFreeze.isFrozen` reads the *partial*-freeze amount and stays `false`
+throughout, which is why `status` reports the control list as the thing that moved.
 
 ### Filming the coupon
 

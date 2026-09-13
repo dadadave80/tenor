@@ -11,6 +11,7 @@ import { Card, Pill, Spinner, Value } from '@/components/app/ui'
 import { tenorAbi } from '@/lib/abi'
 import { fmtUsdc } from '@/lib/actions'
 import { addresses, hashscan } from '@/lib/chain'
+import { fmtUsd, useUsdcUsd } from '@/lib/oracle'
 
 /**
  * Coupons.
@@ -27,6 +28,13 @@ type Coupon = {
   paid: bigint
   scheduleNonce: bigint
   settled: boolean
+}
+
+/** The dollar value of a USDC figure, shown only while the Chainlink reference is healthy. */
+function UsdEquivalent({ amount }: { amount: bigint }) {
+  const { price, healthy } = useUsdcUsd()
+  if (!healthy) return null
+  return <div style={{ fontSize: 11, color: 'var(--text-2)' }}>{fmtUsd((Number(amount) / 1e6) * price!)}</div>
 }
 
 function whenText(payAt: bigint): string {
@@ -207,7 +215,10 @@ export default function CouponsPage() {
             >
               <div>
                 <dt style={{ color: 'var(--text-2)', fontSize: 12 }}>Funded</dt>
-                <dd style={{ margin: 0, fontFamily: 'var(--font-mono)' }}>{fmtUsdc(coupon.funded)}</dd>
+                <dd style={{ margin: 0, fontFamily: 'var(--font-mono)' }}>
+                  {fmtUsdc(coupon.funded)}
+                  <UsdEquivalent amount={coupon.funded} />
+                </dd>
               </div>
               <div>
                 <dt style={{ color: 'var(--text-2)', fontSize: 12 }}>Needed</dt>
@@ -217,7 +228,10 @@ export default function CouponsPage() {
               </div>
               <div>
                 <dt style={{ color: 'var(--text-2)', fontSize: 12 }}>Paid out</dt>
-                <dd style={{ margin: 0, fontFamily: 'var(--font-mono)' }}>{fmtUsdc(coupon.paid)}</dd>
+                <dd style={{ margin: 0, fontFamily: 'var(--font-mono)' }}>
+                  {fmtUsdc(coupon.paid)}
+                  <UsdEquivalent amount={coupon.paid} />
+                </dd>
               </div>
               {entitlement !== undefined && (
                 <div>

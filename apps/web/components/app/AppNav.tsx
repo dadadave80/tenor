@@ -8,6 +8,7 @@ import { useAccount, useDisconnect } from 'wagmi'
 import { Icon, Identicon, Wordmark, useViewport } from '@/components/landing/primitives'
 import { useSignInMethods } from '@/lib/account'
 import { hashscan } from '@/lib/chain'
+import { useUsdcUsd } from '@/lib/oracle'
 import { useActivity } from './activity'
 import { Pill, SecondaryButton, Spinner } from './ui'
 
@@ -294,6 +295,36 @@ export function PausedBanner({ show }: { show: boolean }) {
       <Icon name="pause" size={13} />
       Trading is paused by the issuer. Listings stay reserved, and sellers can still cancel.
       <Pill kind="warning">Paused</Pill>
+    </div>
+  )
+}
+
+/**
+ * The market prices in USDC and settles in USDC, so it is worth saying out loud when the dollar it
+ * is standing on has moved. A healthy feed says nothing — this only appears when Chainlink's
+ * reference has drifted off the peg, or stopped answering.
+ */
+export function OracleBanner() {
+  const { price, isStale, offPeg } = useUsdcUsd()
+  if (!isStale && !offPeg) return null
+  return (
+    <div
+      role="status"
+      style={{
+        background: 'var(--warning-soft)',
+        color: 'var(--warning)',
+        borderBottom: '1px solid var(--border)',
+        padding: '10px clamp(16px, 4vw, 48px)',
+        fontSize: 13,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+      }}
+    >
+      <Icon name="alert" size={13} />
+      {isStale
+        ? 'Chainlink USDC/USD reference is stale'
+        : `USDC is off its Chainlink reference (${price!.toFixed(4)} USD)`}
     </div>
   )
 }

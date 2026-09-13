@@ -8,6 +8,7 @@ import { SetupCard } from '@/components/app/SetupCard'
 import { liveListings, useListings, type ListingRow } from '@/components/app/useListings'
 import { Card, Pill, SecondaryButton, Spinner } from '@/components/app/ui'
 import { addresses, hashscan } from '@/lib/chain'
+import { useUsdcUsd } from '@/lib/oracle'
 import { useReadiness } from '@/lib/readiness'
 
 /** Maturity of the demo instrument. Used only for the yield figure, which is labelled as derived. */
@@ -39,6 +40,7 @@ function relative(seconds: bigint): string {
 export default function MarketPage() {
   const { rows, loading } = useListings()
   const r = useReadiness()
+  const oracle = useUsdcUsd()
   const { isNarrow } = useViewport()
   const [picked, setPicked] = useState<ListingRow | null>(null)
   const [hideMine, setHideMine] = useState(false)
@@ -79,6 +81,11 @@ export default function MarketPage() {
           <Stat label="Est. yield" value={best !== undefined ? `${ytm(best).toFixed(2)}%` : '—'} accent />
           <Stat label="Offered" value={depth > 0n ? `${Number(formatUnits(depth, 6)).toLocaleString('en-US')}` : '—'} />
           <Stat label="Open listings" value={live.length ? String(live.length) : '—'} />
+          <Stat
+            label="USDC / USD"
+            value={oracle.price !== undefined ? oracle.price.toFixed(4) : '—'}
+            caption="Chainlink"
+          />
         </div>
       </header>
 
@@ -216,11 +223,22 @@ export default function MarketPage() {
   )
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function Stat({
+  label,
+  value,
+  accent,
+  caption,
+}: {
+  label: string
+  value: string
+  accent?: boolean
+  caption?: string
+}) {
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 500, color: accent ? 'var(--accent)' : 'var(--text)' }}>{value}</div>
+      {caption && <div style={{ fontSize: 11, color: 'var(--text-2)' }}>{caption}</div>}
     </div>
   )
 }
