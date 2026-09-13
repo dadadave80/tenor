@@ -151,7 +151,6 @@ export default function MarketPage() {
                       style={{
                         borderTop: '1px solid var(--border)',
                         background: isBest ? 'var(--surface-tint)' : undefined,
-                        boxShadow: isBest ? 'inset 2px 0 0 var(--accent)' : undefined,
                       }}
                     >
                       <Td>
