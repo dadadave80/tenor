@@ -43,10 +43,14 @@ function rewrite(params: unknown): unknown {
 
 export type Shim = { url: string; rewrites: () => number; stop: () => void }
 
-export function startRelayShim(upstream: string, port = 8599): Shim {
+export function startRelayShim(upstream: string, port = 0): Shim {
   let rewrites = 0
 
+  // Bound to 127.0.0.1 on a port the OS picks. A fixed port is not safe: when another process already holds
+  // 127.0.0.1 on it, Bun binding the wildcard address still succeeds, and forge's requests to 127.0.0.1 reach
+  // that other listener instead of this shim — which is how a deploy once went to Hashio unrewritten.
   const server: Server = Bun.serve({
+    hostname: '127.0.0.1',
     port,
     idleTimeout: 120,
     async fetch(req) {
