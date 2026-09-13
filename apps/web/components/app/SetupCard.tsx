@@ -116,7 +116,7 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
       key: 'wallet',
       label: 'Wallet',
       done: !r.disconnected,
-      detail: r.address ? `Ready · ${r.address.slice(0, 6)}…${r.address.slice(-4)}` : 'Sign in with a passkey to begin',
+      detail: r.address ? `Ready · ${r.address.slice(0, 6)}…${r.address.slice(-4)}` : 'Sign in with a passkey or Google to begin',
       icon: r.disconnected ? 'clock' : 'check',
     },
     {

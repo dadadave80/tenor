@@ -49,7 +49,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       config={{
         // Passkey first: the demo's claim is that a compliant secondary market can be opened
         // without a browser extension, so an extension must not be the first thing asked for.
-        loginMethods: ['passkey', 'email', 'wallet'],
+        loginMethods: ['passkey', 'google', 'email', 'wallet'],
         embeddedWallets: { ethereum: { createOnLogin: 'users-without-wallets' } },
         defaultChain: hederaTestnet,
         supportedChains: [hederaTestnet],

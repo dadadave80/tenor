@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useAccount, useDisconnect } from 'wagmi'
 import { Icon, Identicon, Wordmark, useViewport } from '@/components/landing/primitives'
+import { useSignInMethods } from '@/lib/account'
 import { hashscan } from '@/lib/chain'
 import { useActivity } from './activity'
 import { Pill, SecondaryButton, Spinner } from './ui'
@@ -21,7 +22,7 @@ function short(a: string): string {
   return `${a.slice(0, 6)}…${a.slice(-4)}`
 }
 
-export function AppNav({ onTray }: { onTray: () => void }) {
+export function AppNav({ onTray, onAccount }: { onTray: () => void; onAccount: () => void }) {
   const path = usePathname()
   const { isMobile } = useViewport()
   const { pending } = useActivity()
@@ -29,6 +30,7 @@ export function AppNav({ onTray }: { onTray: () => void }) {
   const { disconnect } = useDisconnect()
   const { ready, authenticated, login, logout } = usePrivy()
   const [menu, setMenu] = useState(false)
+  const { atRisk } = useSignInMethods()
 
   const signIn = () => {
     // Privy owns the modal. `ready` is false until its iframe has loaded, and calling `login`
@@ -148,6 +150,12 @@ export function AppNav({ onTray }: { onTray: () => void }) {
             >
               <Identicon addr={address} size={24} />
               {short(address)}
+              {atRisk && (
+                <span
+                  aria-label="No backup sign-in"
+                  style={{ width: 8, height: 8, borderRadius: 'var(--radius-pill)', background: 'var(--warning)' }}
+                />
+              )}
             </button>
             {menu && (
               <div
@@ -187,6 +195,30 @@ export function AppNav({ onTray }: { onTray: () => void }) {
                 >
                   View on HashScan
                 </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenu(false)
+                    onAccount()
+                  }}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--text)',
+                    fontSize: 13,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                  }}
+                >
+                  Account & recovery
+                  {atRisk && <Pill kind="warning">Add backup</Pill>}
+                </button>
                 <button
                   type="button"
                   onClick={signOut}
