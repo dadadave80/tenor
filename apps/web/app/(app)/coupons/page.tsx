@@ -64,7 +64,7 @@ export default function CouponsPage() {
   } = useQuery({
     queryKey: ['couponIds', tenor],
     enabled: Boolean(tenor && client),
-    refetchInterval: (q) => (q.state.status === 'error' ? 10_000 : false),
+    refetchInterval: (q) => (q.state.status === 'error' ? 10_000 : 8_000),
     queryFn: async () => {
       // Not `fromBlock: 'earliest'`: Hashio rejects it outright, because it caps the span at seven
       // days. `getAllLogs` starts from the recorded deploy block and walks in windows.

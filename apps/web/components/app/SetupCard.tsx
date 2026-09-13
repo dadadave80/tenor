@@ -35,7 +35,7 @@ type Row = {
 
 export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
   const r = useReadiness()
-  const { ready: privyReady, login } = usePrivy()
+  const { ready: privyReady, authenticated, login } = usePrivy()
   const { track, fail } = useActivity()
   const { writeContractAsync } = useWriteContract()
   const [busy, setBusy] = useState<string | null>(null)
@@ -126,7 +126,7 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
       detail: r.address ? `Ready · ${r.address.slice(0, 6)}…${r.address.slice(-4)}` : 'Sign in with a passkey or Google to begin',
       icon: r.disconnected ? 'clock' : 'check',
       // Signed out, this is the only row that can be acted on: every other button needs an account to act for.
-      action: r.disconnected ? { label: 'Sign in', onClick: () => login(), disabled: !privyReady } : undefined,
+      action: r.disconnected && !authenticated ? { label: 'Sign in', onClick: () => login(), disabled: !privyReady } : undefined,
     },
     {
       key: 'hbar',
