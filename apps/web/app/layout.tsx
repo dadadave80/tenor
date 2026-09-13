@@ -23,10 +23,18 @@ const geistMono = Geist_Mono({
   display: 'swap',
 })
 
+const title = 'Tenor — bonds that enforce their own rules'
+const description =
+  'A secondary market for regulated bond tokens on Hedera. Verified investors trade peer-to-peer, the bond checks every trade, and coupons pay themselves.'
+
+// `opengraph-image.png` next to this file becomes og:image and twitter:image; metadataBase makes
+// those URLs absolute, which link previews require.
 export const metadata: Metadata = {
-  title: 'Tenor — bonds that enforce their own rules',
-  description:
-    'A secondary market for regulated bond tokens on Hedera. Verified investors trade peer-to-peer, the bond checks every trade, and coupons pay themselves.',
+  metadataBase: new URL('https://tenor-markets.vercel.app'),
+  title,
+  description,
+  openGraph: { title, description, siteName: 'Tenor', type: 'website', url: '/' },
+  twitter: { card: 'summary_large_image' },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
