@@ -229,8 +229,9 @@ specification: reading Lattice's and ATS's actual Solidity, and checking every n
 That caught the access-control problem described above, plus two wrong symbol names and a struct
 argument that the type checker alone would not have surfaced before testnet.
 
-Design explored in **Claude Design**. The specification, ground-truth notes and all planning documents
-are committed under `docs/`.
+Design explored in **Claude Design**. The Tenor logo — ribbon mark and wordmark — was designed with
+**Codex** (ChatGPT 5.6 Astra). The specification, ground-truth notes and all planning documents are
+committed under `docs/`.
 
 ---
 
