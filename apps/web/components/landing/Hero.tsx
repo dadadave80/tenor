@@ -1,6 +1,6 @@
 'use client'
 
-import { hashscan } from '@/lib/chain'
+import { addresses, hashscan } from '@/lib/chain'
 import { Icon, Identicon, useLoop, useViewport } from './primitives'
 
 /**
@@ -288,7 +288,7 @@ export function Hero() {
               <Icon name="check" size={14} />
               Settled in one transaction · <span style={{ fontFamily: 'var(--font-mono)' }}>2.1 s</span>
             </span>
-            <a href={hashscan('transaction', '')} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+            <a href={addresses.tenor ? hashscan('contract', addresses.tenor) : 'https://hashscan.io/testnet'} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
               HashScan
             </a>
           </div>

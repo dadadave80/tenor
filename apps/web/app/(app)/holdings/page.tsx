@@ -7,7 +7,7 @@ import { SellDrawer } from '@/components/app/SellDrawer'
 import { useListings, type ListingRow } from '@/components/app/useListings'
 import { Card, Pill, PrimaryButton, SecondaryButton, Spinner } from '@/components/app/ui'
 import { fmtTokens, fmtUsdc, useCancelAction } from '@/lib/actions'
-import { addresses, hashscan } from '@/lib/chain'
+import { addresses } from '@/lib/chain'
 import { useReadiness } from '@/lib/readiness'
 
 function relative(seconds: bigint): string {
@@ -27,11 +27,17 @@ export default function HoldingsPage() {
   const [selling, setSelling] = useState(false)
 
   const mine = useMemo(
-    () => (r.address ? rows.filter((l) => l.seller.toLowerCase() === r.address!.toLowerCase()) : []),
+    () =>
+      r.address
+        ? rows
+            .filter((l) => l.seller.toLowerCase() === r.address!.toLowerCase())
+            .sort((a, b) => Number(b.active) - Number(a.active))
+        : [],
     [rows, r.address],
   )
-  const now = BigInt(Math.floor(Date.now() / 1000))
-  const reserved = mine.filter((l) => l.active && l.expiry > now).reduce((a, l) => a + l.remaining, 0n)
+  // Expiry does not release a hold -- the token keeps it until the seller reclaims -- so an expired
+  // listing that is still active still reserves its tokens.
+  const reserved = mine.filter((l) => l.active).reduce((a, l) => a + l.remaining, 0n)
 
   // `balanceOf` EXCLUDES held tokens -- an ATS hold moves them out of the partition balance, it does
   // not flag them in place. Verified on testnet: an account that had delivered 30 of 990 with 20
@@ -39,6 +45,8 @@ export default function HoldingsPage() {
   // the reservation again understated it by exactly the amount reserved.
   const available = r.tokens
   const total = r.tokens + reserved
+  // Zeros before the reads land look like a failed buy, so nothing is drawn until they do.
+  const unknown = r.disconnected || r.loading
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -51,7 +59,7 @@ export default function HoldingsPage() {
             What you hold, what is reserved by your listings, and what you can sell.
           </p>
         </div>
-        <SecondaryButton onClick={() => setSelling(true)} disabled={available === 0n}>
+        <SecondaryButton onClick={() => setSelling(true)} disabled={unknown || available === 0n}>
           Sell tokens
         </SecondaryButton>
       </header>
@@ -60,25 +68,25 @@ export default function HoldingsPage() {
         <Card>
           <div style={{ fontSize: 12, color: 'var(--text-2)' }}>TGN27 owned</div>
           <div style={{ fontSize: 26, fontWeight: 500 }}>
-            {addresses.token ? Number(formatUnits(total, 6)).toLocaleString('en-US') : '—'}
+            {addresses.token && !unknown && !loading ? Number(formatUnits(total, 6)).toLocaleString('en-US') : '—'}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 4 }}>free plus reserved</div>
         </Card>
         <Card>
           <div style={{ fontSize: 12, color: 'var(--text-2)' }}>Reserved by your listings</div>
           <div style={{ fontSize: 26, fontWeight: 500 }}>
-            {addresses.tenor ? Number(formatUnits(reserved, 6)).toLocaleString('en-US') : '—'}
+            {addresses.tenor && !r.disconnected && !loading ? Number(formatUnits(reserved, 6)).toLocaleString('en-US') : '—'}
           </div>
         </Card>
         <Card>
           <div style={{ fontSize: 12, color: 'var(--text-2)' }}>Free to sell</div>
           <div style={{ fontSize: 26, fontWeight: 500, color: 'var(--accent)' }}>
-            {addresses.tenor ? Number(formatUnits(available, 6)).toLocaleString('en-US') : '—'}
+            {addresses.tenor && !unknown ? Number(formatUnits(available, 6)).toLocaleString('en-US') : '—'}
           </div>
         </Card>
         <Card>
           <div style={{ fontSize: 12, color: 'var(--text-2)' }}>USDC</div>
-          <div style={{ fontSize: 26, fontWeight: 500 }}>{addresses.usdc ? fmtUsdc(r.usdc) : '—'}</div>
+          <div style={{ fontSize: 26, fontWeight: 500 }}>{addresses.usdc && !unknown ? fmtUsdc(r.usdc) : '—'}</div>
         </Card>
       </div>
 
@@ -95,11 +103,17 @@ export default function HoldingsPage() {
 
         {!loading && mine.length === 0 && (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-2)', fontSize: 14 }}>
-            {r.disconnected
-              ? 'Sign in to see your listings.'
-              : available > 0n
-                ? 'No listings yet. Sell tokens to open one.'
-                : 'No listings, and no tokens free to sell.'}
+            {r.disconnected ? (
+              'Sign in to see your listings.'
+            ) : r.loading ? (
+              'No listings yet.'
+            ) : available > 0n ? (
+              'No listings yet. Sell tokens to open one.'
+            ) : (
+              <>
+                You hold no TGN27 yet. Buy some on the <a href="/market">Market</a>.
+              </>
+            )}
           </div>
         )}
 
@@ -109,7 +123,7 @@ export default function HoldingsPage() {
               <thead>
                 <tr style={{ color: 'var(--text-2)', fontSize: 12, textAlign: 'left' }}>
                   <th style={{ padding: '10px 20px', fontWeight: 500 }}>Remaining</th>
-                  <th style={{ padding: '10px 20px', fontWeight: 500, textAlign: 'right' }}>Price</th>
+                  <th style={{ padding: '10px 20px', fontWeight: 500, textAlign: 'right' }}>Price (USDC)</th>
                   <th style={{ padding: '10px 20px', fontWeight: 500, textAlign: 'right' }}>Expires</th>
                   <th style={{ padding: '10px 20px', fontWeight: 500 }}>Status</th>
                   <th style={{ padding: '10px 20px', fontWeight: 500, textAlign: 'right' }}> </th>
@@ -128,7 +142,8 @@ export default function HoldingsPage() {
       <p style={{ margin: 0, fontSize: 12, color: 'var(--text-2)', display: 'flex', alignItems: 'center', gap: 8 }}>
         <Icon name="shield" size={12} />
         Listing does not transfer your tokens — it places a hold on the bond, which reserves them out of your
-        sellable balance. Cancelling or letting the listing expire releases them back to you.
+        sellable balance. Cancelling releases them back to you; once a listing expires they stay reserved on the
+        token until you reclaim them.
       </p>
 
       <SellDrawer open={selling} onClose={() => setSelling(false)} available={available} />
@@ -179,14 +194,14 @@ function MyListingRow({ listing }: { listing: ListingRow }) {
       </td>
       <td style={{ padding: '12px 20px' }}>{status}</td>
       <td style={{ padding: '12px 20px', textAlign: 'right' }}>
-        {listing.active ? (
+        {listing.active && !expired ? (
           <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', maxWidth: 220 }}>
             <PrimaryButton action={cancel} full={false} />
           </div>
+        ) : listing.active ? (
+          <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Expired · still reserved</span>
         ) : (
-          <a href={addresses.tenor ? hashscan('contract', addresses.tenor) : '#'} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
-            HashScan
-          </a>
+          <span style={{ color: 'var(--text-2)' }}>—</span>
         )}
       </td>
     </tr>

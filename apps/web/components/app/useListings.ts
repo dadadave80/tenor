@@ -16,10 +16,10 @@ import { addresses } from '@/lib/chain'
  */
 export type ListingRow = Listing & { id: bigint }
 
-export function useListings(): { rows: ListingRow[]; loading: boolean; nextId?: bigint } {
+export function useListings(): { rows: ListingRow[]; loading: boolean; error: boolean; nextId?: bigint } {
   const { tenor } = addresses
 
-  const { data: nextId } = useReadContract({
+  const { data: nextId, isLoading: countLoading, isError: countError } = useReadContract({
     address: tenor,
     abi: tenorAbi,
     functionName: 'nextListingId',
@@ -34,7 +34,7 @@ export function useListings(): { rows: ListingRow[]; loading: boolean; nextId?: 
     return Array.from({ length: n }, (_, i) => BigInt(i))
   }, [nextId])
 
-  const { data, isLoading } = useReadContracts({
+  const { data, isLoading, isError } = useReadContracts({
     allowFailure: true,
     contracts: ids.map((id) => ({ address: tenor, abi: tenorAbi, functionName: 'getListing', args: [id] }) as const),
     query: { enabled: Boolean(tenor) && ids.length > 0 },
@@ -47,7 +47,9 @@ export function useListings(): { rows: ListingRow[]; loading: boolean; nextId?: 
       .filter((l): l is ListingRow => l !== null)
   }, [data, ids])
 
-  return { rows, loading: isLoading, nextId }
+  // The listing read stays disabled until the count arrives, so loading has to cover both or the
+  // page shows an empty market first.
+  return { rows, loading: countLoading || isLoading, error: countError || isError, nextId }
 }
 
 /** Active, unexpired, still has tokens. Sorted cheapest first, which is also highest yield first. */

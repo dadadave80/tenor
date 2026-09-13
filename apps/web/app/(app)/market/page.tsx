@@ -38,7 +38,7 @@ function relative(seconds: bigint): string {
 }
 
 export default function MarketPage() {
-  const { rows, loading } = useListings()
+  const { rows, loading, error } = useListings()
   const r = useReadiness()
   const oracle = useUsdcUsd()
   const { isNarrow } = useViewport()
@@ -51,6 +51,8 @@ export default function MarketPage() {
     () => (hideMine && r.address ? live.filter((l) => l.seller.toLowerCase() !== r.address!.toLowerCase()) : live),
     [live, hideMine, r.address],
   )
+  // A failed background refetch keeps the rows it already had; only a failure with nothing to show is one.
+  const unreadable = error && rows.length === 0
 
   const best = live.length ? Number(formatUnits(live[0].pricePerToken, 6)) : undefined
   const depth = live.reduce((a, l) => a + l.remaining, 0n)
@@ -123,7 +125,11 @@ export default function MarketPage() {
           </Empty>
         )}
 
-        {!loading && addresses.tenor && visible.length === 0 && (
+        {!loading && addresses.tenor && unreadable && (
+          <Empty>Could not read the market from Hedera. Retrying in a few seconds.</Empty>
+        )}
+
+        {!loading && addresses.tenor && !unreadable && visible.length === 0 && (
           <Empty>
             No open offers. A verified holder can list tokens from{' '}
             <a href="/holdings">Holdings</a>.
@@ -132,7 +138,10 @@ export default function MarketPage() {
 
         {visible.length > 0 && (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, minWidth: isNarrow ? 640 : undefined }}>
+            {/* Separate borders: a collapsed border is painted by the table and the sticky Buy column would cover it. */}
+            <table
+              style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 14, minWidth: isNarrow ? 640 : undefined }}
+            >
               <thead>
                 <tr style={{ color: 'var(--text-2)', fontSize: 12, textAlign: 'left' }}>
                   <Th>Size</Th>
@@ -141,7 +150,9 @@ export default function MarketPage() {
                   <Th align="right">Total</Th>
                   <Th align="right">Expires</Th>
                   <Th>Seller</Th>
-                  <Th align="right"> </Th>
+                  <Th align="right" style={{ position: 'sticky', right: 0, background: 'var(--surface)' }}>
+                    {' '}
+                  </Th>
                 </tr>
               </thead>
               <tbody>
@@ -153,13 +164,7 @@ export default function MarketPage() {
                   const mine = r.address && l.seller.toLowerCase() === r.address.toLowerCase()
                   const soon = Number(l.expiry) * 1000 - Date.now() < 3600_000
                   return (
-                    <tr
-                      key={String(l.id)}
-                      style={{
-                        borderTop: '1px solid var(--border)',
-                        background: isBest ? 'var(--surface-tint)' : undefined,
-                      }}
-                    >
+                    <tr key={String(l.id)} style={{ background: isBest ? 'var(--surface-tint)' : undefined }}>
                       <Td>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <span style={{ fontFamily: 'var(--font-mono)' }}>{size.toLocaleString('en-US')}</span>
@@ -193,7 +198,10 @@ export default function MarketPage() {
                           {mine ? 'You' : `${l.seller.slice(0, 6)}…${l.seller.slice(-4)}`}
                         </span>
                       </Td>
-                      <Td align="right">
+                      <Td
+                        align="right"
+                        style={{ position: 'sticky', right: 0, background: isBest ? 'var(--surface-tint)' : 'var(--surface)' }}
+                      >
                         {mine ? (
                           <Pill kind="neutral">Yours</Pill>
                         ) : r.marketPaused || r.tokenPaused ? (
@@ -248,8 +256,16 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-2)', fontSize: 14 }}>{children}</div>
 }
 
-function Th({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
-  return <th style={{ padding: '10px 20px', textAlign: align, fontWeight: 500 }}>{children}</th>
+function Th({
+  children,
+  align = 'left',
+  style,
+}: {
+  children: React.ReactNode
+  align?: 'left' | 'right'
+  style?: React.CSSProperties
+}) {
+  return <th style={{ padding: '10px 20px', textAlign: align, fontWeight: 500, ...style }}>{children}</th>
 }
 
 function Td({
@@ -264,7 +280,15 @@ function Td({
   style?: React.CSSProperties
 }) {
   return (
-    <td style={{ padding: '12px 20px', textAlign: align, fontFamily: mono ? 'var(--font-mono)' : undefined, ...style }}>
+    <td
+      style={{
+        padding: '12px 20px',
+        borderTop: '1px solid var(--border)',
+        textAlign: align,
+        fontFamily: mono ? 'var(--font-mono)' : undefined,
+        ...style,
+      }}
+    >
       {children}
     </td>
   )

@@ -186,17 +186,6 @@ export function AppNav({ onTray, onAccount }: { onTray: () => void; onAccount: (
                   gap: 4,
                 }}
               >
-                {isMobile &&
-                  ROUTES.map((r) => (
-                    <Link
-                      key={r.href}
-                      href={r.href}
-                      onClick={() => setMenu(false)}
-                      style={{ padding: '8px 10px', borderRadius: 8, color: 'var(--text)', fontSize: 14 }}
-                    >
-                      {r.label}
-                    </Link>
-                  ))}
                 <button
                   type="button"
                   onClick={copyAddress}
@@ -265,12 +254,51 @@ export function AppNav({ onTray, onAccount }: { onTray: () => void; onAccount: (
               </div>
             )}
           </div>
+        ) : authenticated ? (
+          // Privy finishes login a few seconds before wagmi sees the wallet; "Sign in" here would do nothing.
+          <SecondaryButton disabled>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <Spinner size={14} /> Connecting wallet…
+            </span>
+          </SecondaryButton>
         ) : (
           <SecondaryButton onClick={signIn} disabled={!ready}>
             {ready ? 'Sign in' : 'Loading…'}
           </SecondaryButton>
         )}
       </nav>
+
+      {/* On a phone the tabs get their own row, so a signed-out visitor can still get around. */}
+      {isMobile && (
+        <div style={{ display: 'flex', gap: 4, overflowX: 'auto', padding: '0 clamp(16px, 4vw, 48px) 8px' }}>
+          {ROUTES.map((r) => {
+            const on = path === r.href
+            return (
+              <Link
+                key={r.href}
+                href={r.href}
+                aria-current={on ? 'page' : undefined}
+                className="nav-tab"
+                style={{
+                  height: 30,
+                  padding: '0 12px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  flexShrink: 0,
+                  borderRadius: 'var(--radius-pill)',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  whiteSpace: 'nowrap',
+                  color: on ? 'var(--text)' : 'var(--text-2)',
+                  background: on ? 'var(--surface-2)' : 'transparent',
+                }}
+              >
+                {r.label}
+              </Link>
+            )
+          })}
+        </div>
+      )}
     </header>
   )
 }

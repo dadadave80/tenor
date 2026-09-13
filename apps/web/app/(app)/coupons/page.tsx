@@ -10,7 +10,7 @@ import { Icon } from '@/components/landing/primitives'
 import { Card, Pill, Spinner, Value } from '@/components/app/ui'
 import { tenorAbi } from '@/lib/abi'
 import { fmtUsdc } from '@/lib/actions'
-import { addresses, hashscan } from '@/lib/chain'
+import { addresses, hederaTestnet } from '@/lib/chain'
 import { fmtUsd, useUsdcUsd } from '@/lib/oracle'
 
 /**
@@ -37,13 +37,14 @@ function UsdEquivalent({ amount }: { amount: bigint }) {
   return <div style={{ fontSize: 11, color: 'var(--text-2)' }}>{fmtUsd((Number(amount) / 1e6) * price!)}</div>
 }
 
-function whenText(payAt: bigint): string {
+function whenText(payAt: bigint, settled: boolean): string {
   const ms = Number(payAt) * 1000 - Date.now()
   const abs = new Date(Number(payAt) * 1000).toUTCString().slice(5, 16)
-  if (ms <= 0) return abs
+  if (ms <= 0) return settled ? `Paid on ${abs}` : `Due ${abs}`
   const d = Math.floor(ms / 864e5)
-  const h = Math.floor(ms / 3600_000) % 24
-  return d > 0 ? `${abs} · in ${d} d` : `${abs} · in ${h} h`
+  if (d > 0) return `${abs} · in ${d} d`
+  if (ms >= 3600_000) return `${abs} · in ${Math.floor(ms / 3600_000)} h`
+  return `${abs} · in ${Math.max(1, Math.floor(ms / 60_000))} min`
 }
 
 export default function CouponsPage() {
@@ -54,9 +55,16 @@ export default function CouponsPage() {
   // walk the way `nextListingId` lets the market be walked. `CouponFunded` is the only record that a
   // given id exists, so the ids come from the log.
   const client = useClient()
-  const { data: ids = [] } = useQuery({
+  const {
+    data: ids = [],
+    isLoading: idsLoading,
+    isSuccess: idsSuccess,
+    failureCount: idsFailures,
+    errorUpdateCount: idsErrors,
+  } = useQuery({
     queryKey: ['couponIds', tenor],
     enabled: Boolean(tenor && client),
+    refetchInterval: (q) => (q.state.status === 'error' ? 10_000 : false),
     queryFn: async () => {
       // Not `fromBlock: 'earliest'`: Hashio rejects it outright, because it caps the span at seven
       // days. `getAllLogs` starts from the recorded deploy block and walks in windows.
@@ -72,6 +80,8 @@ export default function CouponsPage() {
       return [...new Set(ids)].sort((a, b) => (a < b ? -1 : 1))
     },
   })
+  // A failed scan resets to pending on each retry, so failure is read from the counters, not `isError`.
+  const idsFailing = !idsSuccess && (idsFailures > 0 || idsErrors > 0)
 
   const { data, isLoading } = useReadContracts({
     allowFailure: true,
@@ -154,7 +164,7 @@ export default function CouponsPage() {
         </Card>
       </div>
 
-      {isLoading && (
+      {((idsLoading && !idsFailing) || isLoading) && (
         <Card>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--text-2)', fontSize: 14 }}>
             <Spinner size={16} /> Reading coupons…
@@ -162,7 +172,15 @@ export default function CouponsPage() {
         </Card>
       )}
 
-      {!isLoading && ids.length === 0 && (
+      {idsFailing && ids.length === 0 && (
+        <Card>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--warning)', fontSize: 14 }}>
+            <Icon name="alert" size={16} /> Could not read coupon history from the relay. Retrying…
+          </div>
+        </Card>
+      )}
+
+      {!idsLoading && !isLoading && !idsFailing && ids.length === 0 && (
         <Card>
           <p style={{ margin: 0, fontSize: 14, color: 'var(--text-2)' }}>
             {tenor
@@ -176,20 +194,26 @@ export default function CouponsPage() {
         if (!coupon) return null
         const rc = requirements?.[ci]
         const requirement = rc?.status === 'success' ? (rc.result as bigint) : undefined
-        const shortfall = requirement !== undefined && coupon.funded < requirement
+        const shortfall = !coupon.settled && requirement !== undefined && coupon.funded < requirement
         const booked = schedule && schedule !== '0x0000000000000000000000000000000000000000'
+        const scheduleId = booked ? `0.0.${BigInt(schedule)}` : undefined
+        const due = !coupon.settled && Number(coupon.payAt) * 1000 <= Date.now()
         return (
           <Card key={String(id)} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 500 }}>Coupon #{String(id)}</div>
                 <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                  {whenText(coupon.payAt)} · {fmtUsdc(coupon.amountPerToken)} per token
+                  {whenText(coupon.payAt, coupon.settled)} · {fmtUsdc(coupon.amountPerToken)} per token
                 </div>
               </div>
               {coupon.settled ? (
                 <Pill kind="accent" icon="check">
                   Paid
+                </Pill>
+              ) : booked && due ? (
+                <Pill kind="warning" icon="alert">
+                  Due
                 </Pill>
               ) : booked ? (
                 <Pill kind="info" icon="clock">
@@ -220,12 +244,14 @@ export default function CouponsPage() {
                   <UsdEquivalent amount={coupon.funded} />
                 </dd>
               </div>
-              <div>
-                <dt style={{ color: 'var(--text-2)', fontSize: 12 }}>Needed</dt>
-                <dd style={{ margin: 0, fontFamily: 'var(--font-mono)' }}>
-                  <Value>{requirement !== undefined ? fmtUsdc(requirement) : undefined}</Value>
-                </dd>
-              </div>
+              {!coupon.settled && (
+                <div>
+                  <dt style={{ color: 'var(--text-2)', fontSize: 12 }}>Needed</dt>
+                  <dd style={{ margin: 0, fontFamily: 'var(--font-mono)' }}>
+                    <Value>{requirement !== undefined ? fmtUsdc(requirement) : undefined}</Value>
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt style={{ color: 'var(--text-2)', fontSize: 12 }}>Paid out</dt>
                 <dd style={{ margin: 0, fontFamily: 'var(--font-mono)' }}>
@@ -243,7 +269,7 @@ export default function CouponsPage() {
               )}
             </dl>
 
-            {requirement !== undefined && requirement > 0n && (
+            {!coupon.settled && requirement !== undefined && requirement > 0n && (
               <div style={{ height: 6, borderRadius: 'var(--radius-pill)', background: 'var(--surface-2)', overflow: 'hidden' }}>
                 <div
                   style={{
@@ -257,11 +283,16 @@ export default function CouponsPage() {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--text-2)', flexWrap: 'wrap' }}>
               <Icon name="cal" size={12} />
-              {booked ? (
+              {scheduleId ? (
                 <>
                   Booked with the Hedera Schedule Service at{' '}
-                  <a href={hashscan('account', schedule!)} target="_blank" rel="noreferrer" style={{ fontFamily: 'var(--font-mono)' }}>
-                    {schedule!.slice(0, 10)}…
+                  <a
+                    href={`${hederaTestnet.blockExplorers.default.url}/schedule/${scheduleId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontFamily: 'var(--font-mono)' }}
+                  >
+                    {scheduleId}
                   </a>
                 </>
               ) : (

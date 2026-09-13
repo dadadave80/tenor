@@ -1,5 +1,6 @@
 'use client'
 
+import { usePrivy } from '@privy-io/react-auth'
 import { useCallback, useEffect, useState } from 'react'
 import { formatUnits } from 'viem'
 import { useWriteContract } from 'wagmi'
@@ -34,6 +35,7 @@ type Row = {
 
 export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
   const r = useReadiness()
+  const { ready: privyReady, login } = usePrivy()
   const { track, fail } = useActivity()
   const { writeContractAsync } = useWriteContract()
   const [busy, setBusy] = useState<string | null>(null)
@@ -123,6 +125,8 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
       done: !r.disconnected,
       detail: r.address ? `Ready · ${r.address.slice(0, 6)}…${r.address.slice(-4)}` : 'Sign in with a passkey or Google to begin',
       icon: r.disconnected ? 'clock' : 'check',
+      // Signed out, this is the only row that can be acted on: every other button needs an account to act for.
+      action: r.disconnected ? { label: 'Sign in', onClick: () => login(), disabled: !privyReady } : undefined,
     },
     {
       key: 'hbar',
@@ -135,7 +139,9 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
           : 'Needed for transaction fees',
       icon: hbarReady ? 'check' : 'clock',
       action:
-        hbarReady || !faucet ? undefined : { label: 'Get test HBAR', onClick: () => drip('hbar', 'hbar', 'Get test HBAR') },
+        hbarReady || !faucet || r.disconnected
+          ? undefined
+          : { label: 'Get test HBAR', onClick: () => drip('hbar', 'hbar', 'Get test HBAR') },
       // Hedera's own faucet gives 100 HBAR, twenty times our drip, so it is offered alongside ours rather than instead of it.
       link: hbarReady ? undefined : { href: 'https://portal.hedera.com/faucet', label: 'Get 100 HBAR from Hedera’s faucet' },
     },
@@ -145,7 +151,8 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
       done: r.usdcAssociated,
       detail: r.usdcAssociated ? 'Enabled on this account' : 'Required to buy and to receive coupons',
       icon: r.usdcAssociated ? 'check' : 'clock',
-      action: r.usdcAssociated || !addresses.usdc ? undefined : { label: 'Enable USDC', onClick: enableUsdc },
+      action:
+        r.usdcAssociated || !addresses.usdc || r.disconnected ? undefined : { label: 'Enable USDC', onClick: enableUsdc },
     },
     {
       key: 'balance',
@@ -154,7 +161,7 @@ export function SetupCard({ onDismiss }: { onDismiss?: () => void }) {
       detail: r.usdc > 0n ? fmtUsdc(r.usdc) : 'For buying on testnet',
       icon: r.usdc > 0n ? 'check' : 'clock',
       action:
-        r.usdc > 0n || !faucet
+        r.usdc > 0n || !faucet || r.disconnected
           ? undefined
           : {
               label: r.usdcAssociated ? 'Get demo USDC' : 'Enable USDC first',

@@ -86,6 +86,7 @@ export default function ContractsPage() {
         <AddressRow
           label="Settlement token"
           address={usdc}
+          href={usdc ? hashscan('token', `0.0.${BigInt(usdc)}`) : undefined}
           note={
             settlement && usdc && settlement.toLowerCase() !== usdc.toLowerCase()
               ? '⚠ does not match the market’s pinned USDC'
@@ -97,8 +98,13 @@ export default function ContractsPage() {
             Boolean(settlement && usdc && settlement.toLowerCase() !== usdc.toLowerCase()) || associated === false
           }
         />
-        <AddressRow label="Hedera Token Service" address={HTS_SYSTEM_CONTRACT} note="system contract 0x167" />
-        <AddressRow label="Hedera Schedule Service" address="0x000000000000000000000000000000000000016b" note="system contract 0x16b" />
+        <AddressRow label="Hedera Token Service" address={HTS_SYSTEM_CONTRACT} href={null} note="system contract 0x167" />
+        <AddressRow
+          label="Hedera Schedule Service"
+          address="0x000000000000000000000000000000000000016b"
+          href={null}
+          note="system contract 0x16b"
+        />
         <AddressRow
           label="Chainlink USDC/USD feed"
           address={USDC_USD_FEED}
@@ -195,14 +201,18 @@ function Item({ label, children }: { label: string; children: React.ReactNode })
 function AddressRow({
   label,
   address,
+  href,
   note,
   warn,
 }: {
   label: string
   address?: string
+  /** Defaults to the HashScan contract page; `null` for addresses HashScan has no page for. */
+  href?: string | null
   note: string
   warn?: boolean
 }) {
+  const short = address && `${address.slice(0, 10)}…${address.slice(-6)}`
   return (
     <div
       style={{
@@ -219,14 +229,16 @@ function AddressRow({
         <div style={{ fontSize: 14, fontWeight: 500 }}>{label}</div>
         <div style={{ fontSize: 12, color: warn ? 'var(--warning)' : 'var(--text-2)' }}>{note}</div>
       </div>
-      {address ? (
+      {address && href === null ? (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{short}</span>
+      ) : address ? (
         <a
-          href={hashscan('contract', address)}
+          href={href ?? hashscan('contract', address)}
           target="_blank"
           rel="noreferrer"
           style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}
         >
-          {address.slice(0, 10)}…{address.slice(-6)}
+          {short}
         </a>
       ) : (
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-2)' }}>—</span>

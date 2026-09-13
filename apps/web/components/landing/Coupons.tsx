@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createPublicClient, http } from 'viem'
 import { tenorAbi } from '@/lib/abi'
-import { addresses, hashscan, hederaTestnet } from '@/lib/chain'
+import { addresses, hederaTestnet } from '@/lib/chain'
 import { Icon, revealStyle, useLoop, useReveal, useViewport } from './primitives'
 
 const client = createPublicClient({ chain: hederaTestnet, transport: http() })
@@ -202,7 +202,7 @@ export function Coupons() {
               Paid to every registered holder
               {schedule && (
                 <a
-                  href={hashscan('account', schedule)}
+                  href={`${hederaTestnet.blockExplorers.default.url}/schedule/0.0.${BigInt(schedule)}`}
                   target="_blank"
                   rel="noreferrer"
                   style={{ fontFamily: 'var(--font-ui)', fontSize: 12 }}
@@ -216,8 +216,12 @@ export function Coupons() {
               {schedule ? (
                 <>
                   Schedule{' '}
-                  <a href={hashscan('account', schedule)} target="_blank" rel="noreferrer">
-                    {schedule.slice(0, 10)}…
+                  <a
+                    href={`${hederaTestnet.blockExplorers.default.url}/schedule/0.0.${BigInt(schedule)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    0.0.{String(BigInt(schedule))}
                   </a>{' '}
                   executes in
                 </>

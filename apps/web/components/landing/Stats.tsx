@@ -19,7 +19,8 @@ import { fmt, useCountUp, useReveal } from './primitives'
  */
 const client = createPublicClient({ chain: hederaTestnet, transport: http() })
 
-type Stat = { label: string; value: string | undefined }
+/** `fixed` values are facts of the instrument, not reads: they render as-is, without the count-up. */
+type Stat = { label: string; value: string | undefined; fixed?: boolean }
 
 function useLandingStats(): { stats: Stat[]; loaded: boolean } {
   const [listed, setListed] = useState<number>()
@@ -28,7 +29,7 @@ function useLandingStats(): { stats: Stat[]; loaded: boolean } {
   useEffect(() => {
     const tenor = addresses.tenor
     if (!tenor) {
-      // Nothing deployed yet — leave every value undefined so the row renders dashes.
+      // Nothing deployed yet — leave the count undefined so it renders a dash.
       setLoaded(true)
       return
     }
@@ -52,10 +53,10 @@ function useLandingStats(): { stats: Stat[]; loaded: boolean } {
     loaded,
     stats: [
       { label: 'Notes listed', value: listed === undefined ? undefined : String(listed) },
-      { label: 'Volume settled', value: undefined },
-      { label: 'Holders', value: undefined },
-      { label: 'Next coupon in', value: undefined },
-      { label: 'Verified contracts', value: undefined },
+      { label: 'Coupon', value: '6.00%', fixed: true },
+      { label: 'Matures', value: '15 Sep 2027', fixed: true },
+      // 14 Tenor contracts + 121 ATS contracts, all Sourcify exact_match (README, deployed addresses).
+      { label: 'Contracts verified', value: '135' },
     ],
   }
 }
@@ -81,7 +82,7 @@ export function Stats() {
         {stats.map((s) => (
           <div key={s.label} style={{ display: 'flex', flexDirection: 'column', minWidth: 120 }}>
             <span style={{ fontSize: 24, fontWeight: 500, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
-              {s.value === undefined ? '—' : countUpText(s.value, k)}
+              {s.value === undefined ? '—' : s.fixed ? s.value : countUpText(s.value, k)}
             </span>
             <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{s.label}</span>
           </div>
