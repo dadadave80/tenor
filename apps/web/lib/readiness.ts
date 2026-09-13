@@ -1,6 +1,7 @@
 'use client'
 
-import { useAccount, useBalance, useReadContract, useReadContracts } from 'wagmi'
+import { useQuery } from '@tanstack/react-query'
+import { useAccount, useClient, useReadContract, useReadContracts } from 'wagmi'
 import { atsTokenAbi, tenorAbi } from './abi'
 import { addresses, HTS_SYSTEM_CONTRACT } from './chain'
 
@@ -76,7 +77,15 @@ export function useReadiness(): Readiness {
   const { tenor, token, usdc } = addresses
   const on = Boolean(address && tenor && token && usdc)
 
-  const { data: bal } = useBalance({ address, query: { enabled: Boolean(address) } })
+  // Not `useBalance`. With multicall3 declared, viem reads a balance through multicall3's `getEthBalance`,
+  // which runs inside Hedera's EVM and answers in tinybars (8 dp). Only the relay's `eth_getBalance` answers
+  // in the 18 dp every HBAR amount here assumes: 104 HBAR read the other way is 0.0000001.
+  const client = useClient()
+  const { data: hbar } = useQuery({
+    queryKey: ['hbar', address],
+    queryFn: async () => BigInt((await client!.request({ method: 'eth_getBalance', params: [address!, 'latest'] })) as string),
+    enabled: Boolean(address && client),
+  })
 
   // One multicall rather than nine round trips: the drawer re-reads these on every keystroke through
   // the amount field. This is only actually one request because `chain.contracts.multicall3` is set
@@ -124,7 +133,7 @@ export function useReadiness(): Readiness {
     loading: isLoading || unreadable,
     unreadable,
     address,
-    hbar: bal?.value ?? 0n,
+    hbar: hbar ?? 0n,
     verified: Number(at<bigint | number>(0, 0)) === KYC_GRANTED,
     frozen: at<boolean>(1, false),
     blocked: at<boolean>(2, false),
