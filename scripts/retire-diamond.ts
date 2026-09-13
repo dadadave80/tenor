@@ -34,6 +34,11 @@ const ROLES: [string, string][] = [
   ['HSS_SCHEDULER_ROLE', id('HSS_SCHEDULER_ROLE')],
 ]
 
+/** Gas limits with headroom over the relay's estimates, which are too low for calls that reach the ATS token. */
+const CANCEL_GAS = 1_500_000n
+const PAUSE_GAS = 300_000n
+const APPROVE_GAS = 1_000_000n
+
 const args = process.argv.slice(2).filter((a) => a !== '--')
 const execute = args.includes('--execute')
 const positional = args.filter((a) => !a.startsWith('--'))
@@ -169,20 +174,22 @@ console.log('\nretiring ...')
 for (const l of cancellable) {
   // Simulated first, so a revert is decoded before any HBAR is spent on it.
   await market.cancel.staticCall(l.id)
-  await confirm(`cancel(${l.id})`, market.cancel(l.id))
+  // Explicit gas: `cancel` releases the ATS hold through the token's resolver, and the relay under-estimates that
+  // hop. With its estimate (256,391) as the limit, cancel(0) ran out at 244,993 gas and reverted with no data.
+  await confirm(`cancel(${l.id})`, market.cancel(l.id, { gasLimit: CANCEL_GAS }))
   if ((await market.getListing(l.id)).active) throw new Error(`cancel(${l.id}) was mined but listing #${l.id} is still active.`)
 }
 
 if (!paused) {
   if (!(await market.hasRole(ZeroHash, op))) throw new Error(`${op} lacks DEFAULT_ADMIN_ROLE on ${diamond}, which pause() requires.`)
   await market.pause.staticCall()
-  await confirm('pause()', market.pause())
+  await confirm('pause()', market.pause({ gasLimit: PAUSE_GAS }))
   if (!(await market.paused())) throw new Error('pause() was mined but paused() is still false.')
 }
 
 const allowanceNow = (await tgn.allowance(op, diamond)) as bigint
 if (allowanceNow > 0n) {
-  await confirm(`approve(diamond, 0) on ${symbol}`, tgn.approve(diamond, 0n))
+  await confirm(`approve(diamond, 0) on ${symbol}`, tgn.approve(diamond, 0n, { gasLimit: APPROVE_GAS }))
   const left = (await tgn.allowance(op, diamond)) as bigint
   if (left !== 0n) throw new Error(`approve(0) was mined but the allowance is still ${left}.`)
 }
