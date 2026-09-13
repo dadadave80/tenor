@@ -45,11 +45,12 @@ implement it.
 transaction that creates the hold and records the listing together — a listing can never exist
 without its hold, and vice versa.
 
-**Coupons pay themselves.** The issuer funds a coupon and books it with the **Hedera Schedule
-Service** (HIP-1215). The network fires `payCoupon` at the scheduled second with nobody pressing a
-button. `payCoupon` is permissionless and idempotent, so correctness never depends on the scheduled
-call's sender — and one holder who never associated with USDC is recorded as skipped rather than
-stranding everyone else's coupon.
+**Coupons are booked on-chain and anyone can settle them.** The issuer funds a coupon once and books
+it with the **Hedera Schedule Service** (HIP-1215), and the network fires the booked call at the
+second it was booked for. `payCoupon` is permissionless and idempotent, so the payment never depends
+on that call's sender: any holder or keeper completes it, and a holder who never associated with USDC
+is recorded as skipped rather than stranding everyone else's coupon. What the scheduled call does and
+does not do today is written up in [`docs/GROUND-TRUTH.md`](docs/GROUND-TRUTH.md) §10.
 
 ---
 
@@ -130,6 +131,9 @@ re-check and print each verdict.
 | ATS Factory | `0x6b48Ac8a6fb42b82Bc1e2d615503e9274Db8bA05` | [open](https://hashscan.io/testnet/contract/0x6b48Ac8a6fb42b82Bc1e2d615503e9274Db8bA05) |
 | Issuer / operator | `0xc46A896cBf32Ba3212ebE12108345F30AC0a0Efd` | [open](https://hashscan.io/testnet/account/0xc46A896cBf32Ba3212ebE12108345F30AC0a0Efd) |
 
+Facet addresses are enumerable on-chain via `DiamondLoupe.facets()` and are listed in the client's
+**Contracts** page.
+
 ### Evidence on chain
 
 | Claim | Transaction |
@@ -142,14 +146,30 @@ re-check and print each verdict.
 
 `bun run integration` reproduces the market evidence; `bun run coupon` reproduces the coupon.
 
+## Hedera track checklist
+
+| Extra point | Status | Where to look |
+|---|---|---|
+| Secondary market for ATS-issued assets | Done | Every listing and fill trades the ATS bond TGN27; the atomic delivery-versus-payment fill is [`0x9553256d…`](https://hashscan.io/testnet/transaction/0x9553256de24f6be3ac9f4db343b7b0d6be0b4293acbd20b17666f48d3201ba20) |
+| Compliance controls in use (KYC grants, freezes, transfer restrictions, pauses) | Done | [Compliance controls actually exercised](#compliance-controls-actually-exercised) — and the token, not Tenor, is what refuses: `InvalidKycStatus()` `0xfc855b1b`, with the buyer's USDC untouched |
+| Custom fee schedules and coupon distributions | Done | `setFeeBps`, capped at the 100 bp ceiling, in [`contracts/src/interfaces/ITenorMarket.sol`](contracts/src/interfaces/ITenorMarket.sol); 1,462.50 USDC paid across 2 holders in [`0x0a377c80…`](https://hashscan.io/testnet/transaction/0x0a377c8025481788e9c2acf83c4edec56fa2b35bbd5ae2ad2798c44a90f56791) |
+| Oracle integration for asset pricing or NAV | Done | Chainlink USDC/USD data feed on Hedera testnet, read by the client to express settlement values in USD and to warn when the settlement token leaves its peg. Feed: [`0xb632a7e7e02d76c0Ce99d9C62c7a2d1B5F92B6B5`](https://hashscan.io/testnet/contract/0xb632a7e7e02d76c0Ce99d9C62c7a2d1B5F92B6B5). |
+| Scheduled Transactions for coupon payments | Partial | The schedule is booked and fires within 25 ms of its pay date; the scheduled call itself fails `INVALID_PAYER_SIGNATURE`, so a permissionless `payCoupon` completes settlement — [`docs/GROUND-TRUTH.md`](docs/GROUND-TRUTH.md) §10 |
+| Contributions back upstream to ATS | Done | Two issues filed during the event: [hiero-ledger/hiero-consensus-node#27263](https://github.com/hiero-ledger/hiero-consensus-node/issues/27263) (HIP-1215 contract-as-payer finding) and [hashgraph/asset-tokenization-studio#1405](https://github.com/hashgraph/asset-tokenization-studio/issues/1405) (Sourcify verification of the whole ATS system, Foundry deploy path). |
+
+**Why Tenor pays coupons itself.** ATS's own `Coupon` facet records a coupon as a corporate action —
+record date, execution date, accrual window, rate — and binds a holder snapshot to it, so a holder's
+entitlement can be read back as a `numerator`/`denominator` fraction. It moves no settlement asset:
+there is no payment leg in it. `TenorCoupon` is that payment leg. The issuer funds it in USDC, books
+it for a second with the Hedera Schedule Service, and `payCoupon` pays each registered holder pro rata
+to their balance through the Hedera Token Service. Tenor keeps its own holder register and does not
+read ATS's coupon record today; the two are complementary, not wired together.
+
 One thing is deliberately **not** claimed: coupons do not yet pay with nobody sending a transaction.
 The schedule is booked with the Hedera Schedule Service and the network fires it within 25 ms of its
 pay date, but the scheduled call itself fails `INVALID_PAYER_SIGNATURE`, so the transfer is completed
 by a permissionless `payCoupon` that any holder can call. `docs/GROUND-TRUTH.md` §10 has the evidence
 and the cause, and the app's copy says exactly this and no more.
-
-Facet addresses are enumerable on-chain via `DiamondLoupe.facets()` and are listed in the client's
-**Contracts** page.
 
 ---
 
@@ -164,6 +184,32 @@ Facet addresses are enumerable on-chain via `DiamondLoupe.facets()` and are list
 | `contracts/script/DeployTenor.s.sol` | The diamond recipe, shared by production and tests. |
 | `scripts/` | ATS system deploy, USDC creation, bond issuance, M1 evidence, integration run. |
 | `apps/web/` | Next.js client: passkey login, Privy embedded wallets, simulate-before-sign UX. |
+
+---
+
+## Issuers
+
+One Tenor market serves one instrument. The security token and the settlement token are pinned at
+initialisation — `TenorInit.init` stores both — and `list` reverts `TokenNotListable` for any other
+token, because a venue that took the token from calldata could be made to pay a seller for a hold
+that does not exist. Roles are pinned in the same call: `ISSUER_ROLE` (fund a coupon, register
+holders, cancel) and `HSS_SCHEDULER_ROLE` go to one issuer address, `DEFAULT_ADMIN_ROLE` (pause,
+`setFeeBps`, `setMaxDuration`) to the admin. The client is pinned the same way: it reads one market,
+from `NEXT_PUBLIC_TENOR_DIAMOND`.
+
+So a second issuer onboards by repeating those steps for themselves: issue their bond with ATS,
+deploy their own Tenor market — `DeployTenor.run(admin, issuer, usdc, token, feeBps, maxDuration)` in
+[`contracts/script/DeployTenor.s.sol`](contracts/script/DeployTenor.s.sol), driven by
+`bun run deploy:tenor`, which passes the broadcasting key as both admin and issuer — and point a
+client at the new diamond. Nothing is shared between two markets, so nothing has to be trusted
+between two issuers.
+
+Issuer operations run from the command line today: `bun run issuer` wraps the ATS calls an issuer
+actually makes — `kyc grant`/`kyc revoke`, `freeze`/`unfreeze`, `pause`/`unpause`,
+`control-list add`/`control-list remove`, and `status`.
+
+An in-app issuer console, and a client that can hold more than one market, are the next steps.
+Neither exists today.
 
 ---
 
@@ -210,13 +256,14 @@ send HBAR to an address you supply.
 | **Asset Tokenization Studio** | The bond is issued through the ATS Factory and enforces KYC, control lists, freeze and pause on every fill. Holds provide the delivery side of DVP. |
 | **Hedera Token Service** (`0x167`) | USDC settlement — `transferFrom` on the HIP-906 allowance path — plus `associateToken` and the fee sweep. |
 | **Hedera Schedule Service** (`0x16b`) | HIP-1215 `scheduleCall`/`scheduleSelfCall` books coupon payments; the network executes them at expiry. |
-| **Scheduled Transactions** | Coupons settle with no manual action and no off-chain keeper. |
+| **Scheduled Transactions** | Each coupon is booked for a fixed second and the network fires it on time; the payment itself is completed by a permissionless call — [`docs/GROUND-TRUTH.md`](docs/GROUND-TRUTH.md) §10. |
 
 ### Compliance controls actually exercised
 
 - KYC granted to investors A and B, withheld from C — C's fill fails simulation and is never offered
 - a transfer to an unverified holder is refused **by the token**, with the buyer's USDC untouched
-- the issuer freezes a holder and their button flips to "Account frozen" without a reload
+- the issuer freezes a holder (`bun run issuer freeze`, ERC-3643 `setAddressFrozen`, which on this token
+  writes the control list) and their button flips to "Account blocked" without a reload
 - the issuer pauses the token and the market shows "Trading paused by issuer"
 
 ---

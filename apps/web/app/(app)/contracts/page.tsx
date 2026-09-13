@@ -4,6 +4,7 @@ import { useReadContract, useReadContracts } from 'wagmi'
 import { Card, Pill, Spinner, Value } from '@/components/app/ui'
 import { tenorAbi } from '@/lib/abi'
 import { addresses, hashscan, HTS_SYSTEM_CONTRACT } from '@/lib/chain'
+import { USDC_USD_FEED } from '@/lib/oracle'
 
 /**
  * Every address this app talks to, read from the chain rather than listed from memory.
@@ -98,6 +99,11 @@ export default function ContractsPage() {
         />
         <AddressRow label="Hedera Token Service" address={HTS_SYSTEM_CONTRACT} note="system contract 0x167" />
         <AddressRow label="Hedera Schedule Service" address="0x000000000000000000000000000000000000016b" note="system contract 0x16b" />
+        <AddressRow
+          label="Chainlink USDC/USD feed"
+          address={USDC_USD_FEED}
+          note="AggregatorV3 proxy · 8 dp · 24 h heartbeat"
+        />
       </Card>
 
       <Card style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

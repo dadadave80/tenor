@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { AccountDrawer, RecoveryBanner } from '@/components/app/AccountDrawer'
-import { AppNav, PausedBanner } from '@/components/app/AppNav'
+import { AppNav, OracleBanner, PausedBanner } from '@/components/app/AppNav'
 import { ActivityProvider } from '@/components/app/activity'
 import { Toasts, Tray } from '@/components/app/Tray'
 import { useSignInMethods } from '@/lib/account'
@@ -26,6 +26,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
       <AppNav onTray={() => setTray(true)} onAccount={() => setAccount(true)} />
       <PausedBanner show={r.marketPaused || r.tokenPaused} />
+      <OracleBanner />
       <RecoveryBanner show={atRisk} onOpen={() => setAccount(true)} />
       <main style={{ maxWidth: 1440, margin: '0 auto', padding: 'clamp(20px, 3vw, 40px) clamp(16px, 4vw, 48px) 96px' }}>
         {children}

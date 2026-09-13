@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { formatUnits, parseUnits } from 'viem'
 import { Icon, Identicon } from '@/components/landing/primitives'
 import { fmtUsdc, useFillAction } from '@/lib/actions'
+import { fmtUsd, useUsdcUsd } from '@/lib/oracle'
 import { useReadiness } from '@/lib/readiness'
 import type { ListingRow } from './useListings'
 import { Banner, Drawer, Field, Pill, PrimaryButton } from './ui'
@@ -17,6 +18,7 @@ import { Banner, Drawer, Field, Pill, PrimaryButton } from './ui'
  */
 export function FillDrawer({ listing, onClose }: { listing: ListingRow | null; onClose: () => void }) {
   const r = useReadiness()
+  const oracle = useUsdcUsd()
   const [raw, setRaw] = useState('')
 
   const decimals = listing?.tokenDecimals ?? 6
@@ -106,6 +108,12 @@ export function FillDrawer({ listing, onClose }: { listing: ListingRow | null; o
         <dt style={{ color: 'var(--text-2)' }}>You pay</dt>
         <dd style={{ margin: 0, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
           {action.quote ? fmtUsdc(action.quote.cost) : '—'}
+          {/* What that costs in dollars, but only while the reference says a USDC is a dollar. */}
+          {action.quote && oracle.healthy && (
+            <div style={{ fontSize: 11, color: 'var(--text-2)' }}>
+              {fmtUsd(Number(formatUnits(action.quote.cost, 6)) * oracle.price!)}
+            </div>
+          )}
         </dd>
         <dt style={{ color: 'var(--text-2)' }}>Protocol fee</dt>
         <dd style={{ margin: 0, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>

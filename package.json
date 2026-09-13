@@ -25,7 +25,9 @@
     "verify:tenor": "bun --env-file=contracts/.env scripts/verify-tenor.ts",
     "verify:ats": "bun --env-file=contracts/.env scripts/verify-ats.ts",
     "retire:diamond": "bun --env-file=contracts/.env scripts/retire-diamond.ts",
-    "coupon": "bun --env-file=contracts/.env scripts/coupon.ts"
+    "coupon": "bun --env-file=contracts/.env scripts/coupon.ts",
+    "issuer": "bun --env-file=contracts/.env scripts/issuer.ts",
+    "seed:market": "bun --env-file=contracts/.env scripts/seed-market.ts"
   },
   "workspaces": [
     "apps/*"
